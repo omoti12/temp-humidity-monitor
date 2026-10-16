@@ -67,7 +67,7 @@ sudo cp /home/iot-user/temp-monitor/systemd/* /etc/systemd/system/
 パスワードは **コピーした先（/etc/systemd/system）** で書き換える。リポジトリ内のファイルには書かないこと。
 
 ```
-sudo nano /etc/systemd/system/sht31-logger.service   # 警報メールの送信元・アプリパスワード・宛先
+sudo nano /etc/systemd/system/sht31-logger.service   # 警報メールを使うとき：3行の # を外し、送信元・アプリパスワード・宛先を書く
 sudo nano /etc/systemd/system/temp-web.service       # ラズパイ内サイトのパスワード
 ```
 
