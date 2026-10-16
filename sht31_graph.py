@@ -14,7 +14,7 @@ LOG_DIR = "/home/iot-user/templog"
 OUT_PATH = os.path.join(LOG_DIR, "graph.png")
 STEP_MIN = 10          # グラフの間隔（分）
 
-TEMP_HIGH = 25.0       # sht31_logger.py と同じ値にする
+TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
 TEMP_LOW = 21.0
 
 from matplotlib import font_manager

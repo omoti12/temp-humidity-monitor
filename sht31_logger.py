@@ -14,9 +14,9 @@ ADDR = 0x45            # ADDRピンをVINに接続した場合。GNDまたは未
 INTERVAL = 60          # 測定間隔（秒）
 LOG_DIR = "/home/iot-user/templog"
 
-TEMP_HIGH = 25.0       # この温度以上で「高温」警報
+TEMP_HIGH = 30.0       # この温度以上で「高温」警報
 TEMP_LOW = 21.0        # この温度以下で「低温」警報
-HYSTERESIS = 0.5       # 正常に戻ったと判断する幅（25℃なら24.5℃以下で回復）
+HYSTERESIS = 0.5       # 正常に戻ったと判断する幅（30℃なら29.5℃以下で回復）
 REMIND_MIN = 60        # 異常が続くとき、この間隔（分）で再通知する。0なら再通知しない
 
 # メール設定（環境変数で渡す。sht31-logger.service に書く）

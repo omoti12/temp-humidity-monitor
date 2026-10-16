@@ -18,7 +18,7 @@ PUBLISH_DIR = os.environ.get("PUBLISH_DIR", "/home/iot-user/pages-publish")   # 
 REMOTE = os.environ.get("PAGES_REMOTE", "git@github.com:omoti12/temp-humidity-monitor.git")
 BRANCH = "gh-pages"
 STEP_MIN = 10          # グラフの間隔（分）
-TEMP_HIGH = 25.0       # sht31_logger.py と同じ値にする
+TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
 TEMP_LOW = 21.0
 
 SITE_FILES = {         # 公開するファイル: 公開先の名前 → このリポジトリ内の元ファイル
