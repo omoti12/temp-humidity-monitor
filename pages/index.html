@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>温湿度モニター</title>
+<script src="chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
+    --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
+      --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  .updated { color: var(--muted); font-size: .85rem; }
+  .now { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .label { color: var(--muted); font-size: .85rem; }
+  .value { font-size: 2.4rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .value small { font-size: 1rem; font-weight: 400; margin-left: 2px; }
+  #temp { color: var(--temp); } #hum { color: var(--hum); }
+  #status.正常 { color: var(--ok); } #status.高温 { color: var(--warn); } #status.低温 { color: var(--out); }
+  .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .controls button, .controls input, .controls a {
+    font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); text-decoration: none; cursor: pointer; }
+  .chart-card { margin-bottom: 12px; }
+  .chart-box { position: relative; height: 260px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  @media (max-width: 600px) {
+    .now { grid-template-columns: 1fr 1fr; }
+    .now .card:last-child { grid-column: span 2; }
+    .value { font-size: 1.9rem; }
+    .chart-box { height: 220px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>温湿度モニター</h1>
+    <span class="updated" id="updated"></span>
+  </header>
+
+  <section class="now">
+    <div class="card"><div class="label">現在の温度</div><div class="value" id="temp">--</div></div>
+    <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div></div>
+    <div class="card"><div class="label">状態</div><div class="value" id="status">--</div>
+      <div class="stale" id="stale" hidden>30分以上データが更新されていません</div></div>
+  </section>
+
+  <div class="controls">
+    <button id="prev">◀ 前日</button>
+    <input type="date" id="day">
+    <button id="next">翌日 ▶</button>
+    <button id="today">今日</button>
+    <a id="dl" href="#">CSVダウンロード</a>
+  </div>
+
+  <div class="card chart-card">
+    <div class="label">温度（10分ごとの平均、薄い帯は最高〜最低）</div>
+    <div class="chart-box"><canvas id="tempChart"></canvas></div>
+  </div>
+  <div class="card chart-card">
+    <div class="label">湿度（10分ごとの平均）</div>
+    <div class="chart-box"><canvas id="humChart"></canvas></div>
+  </div>
+  <div class="empty" id="empty" hidden>この日の記録はありません</div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (d) => d.toLocaleDateString("sv-SE");   // YYYY-MM-DD
+let day = fmt(new Date());
+let tempChart, humChart;
+
+// 0:00〜23:50 の10分刻みの軸（記録がない時間は空白にする）
+const slots = [];
+for (let m = 0; m < 24 * 60; m += 10)
+  slots.push(String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"));
+
+// 横軸の目盛り: 狭い画面は6時間ごと、広い画面は2時間ごと
+const tickEvery = () => (window.innerWidth < 600 ? 36 : 12);
+
+function lineOpts(unit) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false, spanGaps: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color: css("--muted"), filter: (i) => !i.text.startsWith("_") } },
+               tooltip: { filter: (i) => !i.dataset.label.startsWith("_"),
+                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}${unit}` } } },
+    scales: {
+      x: { ticks: { color: css("--muted"), maxRotation: 0, autoSkip: false,
+                    callback: (v, i) => i % tickEvery() === 0 ? slots[i] : "" },
+           grid: { color: (c) => c.index % tickEvery() === 0 ? css("--line") : "transparent" } },
+      y: { ticks: { color: css("--muted"), callback: (v) => v + unit }, grid: { color: css("--line") } },
+    },
+  };
+}
+
+function buildCharts() {
+  const temp = css("--temp"), hum = css("--hum");
+  tempChart = new Chart($("tempChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      { label: "_max", data: [], borderWidth: 0, pointRadius: 0, fill: "+1", backgroundColor: temp + "22" },
+      { label: "_min", data: [], borderWidth: 0, pointRadius: 0, fill: false },
+      { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 2, borderWidth: 2 },
+      { label: "高温", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+    ] },
+    options: lineOpts("℃"),
+  });
+  humChart = new Chart($("humChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      { label: "湿度", data: [], borderColor: hum, backgroundColor: hum, pointRadius: 2, borderWidth: 2 },
+    ] },
+    options: lineOpts("%"),
+  });
+}
+
+// ラズパイが10分ごとに data/ 以下のJSONを更新する。キャッシュを避けるため時刻を付けて読む
+async function getJson(path) {
+  const res = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" });
+  return res.ok ? res.json() : null;
+}
+
+async function load() {
+  let info, dayData;
+  try {
+    [info, dayData] = await Promise.all([getJson("data/latest.json"), getJson(`data/${day}.json`)]);
+  } catch (e) {
+    $("updated").textContent = "接続できません（再試行中）";
+    return;
+  }
+  if (!info) return;
+  const d = { ...info, points: dayData ? dayData.points : [] };
+
+  if (d.latest) {
+    const ts = new Date(d.latest.time);
+    $("temp").innerHTML = `${d.latest.temp.toFixed(1)}<small>℃</small>`;
+    $("hum").innerHTML = `${d.latest.hum.toFixed(1)}<small>%</small>`;
+    $("status").textContent = d.latest.status;
+    $("status").className = "value " + d.latest.status;
+    $("stale").hidden = Date.now() - ts < 30 * 60 * 1000;
+    $("updated").textContent = `最終記録 ${fmt(ts)} ${ts.toTimeString().slice(0, 5)}（10分ごとに更新）`;
+  }
+
+  const byTime = Object.fromEntries(d.points.map((p) => [p.time, p]));
+  const pick = (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null));
+  const ds = tempChart.data.datasets;
+  ds[0].data = pick("temp_max");
+  ds[1].data = pick("temp_min");
+  ds[2].data = pick("temp");
+  ds[3].data = slots.map(() => d.high);
+  ds[4].data = slots.map(() => d.low);
+  humChart.data.datasets[0].data = pick("hum");
+  tempChart.update();
+  humChart.update();
+
+  $("empty").hidden = d.points.length > 0;
+  $("day").value = day;
+  $("dl").href = `data/${day}.csv`;
+  $("dl").hidden = !dayData;
+}
+
+function shift(n) {
+  const t = new Date(day + "T00:00:00");
+  t.setDate(t.getDate() + n);
+  day = fmt(t);
+  load();
+}
+
+$("prev").onclick = () => shift(-1);
+$("next").onclick = () => shift(1);
+$("today").onclick = () => { day = fmt(new Date()); load(); };
+$("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
+
+buildCharts();
+load();
+setInterval(load, 60 * 1000);   // 1分ごとに自動更新
+</script>
+</body>
+</html>
