@@ -150,7 +150,7 @@ function showLatest(l, isLive) {
   $("status").className = "value " + l.status;
   $("stale").hidden = Date.now() - ts < (isLive ? 5 : 30) * 60 * 1000;
   $("stale").textContent = `${isLive ? 5 : 30}分以上データが更新されていません`;
-  $("updated").textContent = `最終測定 ${fmt(ts)} ${ts.toTimeString().slice(0, 5)}`
+  $("updated").textContent = `最終測定 ${fmt(ts)} ${ts.toTimeString().slice(0, isLive ? 8 : 5)}`
     + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
 }
 
@@ -212,7 +212,7 @@ $("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load();
 buildCharts();
 setInterval(load, 60 * 1000);   // グラフは1分ごとに読み直す
 loadNow().then(load);
-setInterval(loadNow, 15 * 1000); // 現在値は15秒ごとに読み直す
+setInterval(loadNow, 5 * 1000);  // 現在値は5秒ごとに読み直す
 </script>
 </body>
 </html>

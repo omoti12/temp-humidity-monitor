@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """SHT31 温湿度ロガー: 一定間隔で測定し、日付ごとのCSVに追記する。
-温度が設定値を超えたら警報メールを送る。"""
+温度が設定値を超えたら警報メールを送る。
+現在値は NOW_INTERVAL 秒ごとに測って now.json に書く（Webサイトのリアルタイム表示用）。"""
 import csv
+import json
 import os
 import smtplib
 import time
@@ -11,7 +13,8 @@ from email.message import EmailMessage
 from smbus2 import SMBus, i2c_msg
 
 ADDR = 0x45            # ADDRピンをVINに接続した場合。GNDまたは未接続なら0x44
-INTERVAL = 60          # 測定間隔（秒）
+INTERVAL = 60          # 記録（CSV）・警報判定の間隔（秒）
+NOW_INTERVAL = 5       # 現在値（now.json）の更新間隔（秒）。INTERVAL を割り切れる値にする
 LOG_DIR = "/home/iot-user/templog"
 
 TEMP_HIGH = 30.0       # この温度以上で「高温」警報
@@ -122,22 +125,37 @@ def append_csv(now, t, h, st):
         w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), f"{t:.1f}", f"{h:.1f}", st])
 
 
+def write_now(now, t, h, st):
+    """現在値を now.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する。"""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, "now.json")
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump({"iso": now.astimezone().isoformat(timespec="seconds"),
+                   "temp": round(t, 1), "hum": round(h, 1), "status": st}, f, ensure_ascii=False)
+    os.replace(path + ".tmp", path)
+
+
 def main():
     alarm = Alarm()
     st = "正常"
+    last_logged = None      # 最後にCSVへ記録した区切りの時刻
     with SMBus(1) as bus:
         while True:
             now = datetime.now()
+            slot = int(time.time() // INTERVAL)
             try:
                 t, h = read_sht31(bus)
-                st = status(t, st)
-                append_csv(now, t, h, st)
-                print(f"{now:%H:%M:%S}  温度 {t:.1f}℃  湿度 {h:.1f}%  {st}", flush=True)
-                alarm.check(now, t, h, st)
+                if slot != last_logged:         # 毎分1回：記録と警報判定
+                    st = status(t, st)
+                    append_csv(now, t, h, st)
+                    last_logged = slot
+                    print(f"{now:%H:%M:%S}  温度 {t:.1f}℃  湿度 {h:.1f}%  {st}", flush=True)
+                    alarm.check(now, t, h, st)
+                write_now(now, t, h, status(t, st))
             except Exception as e:
                 print(f"{now:%H:%M:%S}  読み取り失敗: {e}", flush=True)
-            # 次の区切り（毎分0秒）まで待つ。測定にかかった時間でずれていかないようにする
-            time.sleep(INTERVAL - time.time() % INTERVAL)
+            # 次の区切り（5秒ごと）まで待つ。測定にかかった時間でずれていかないようにする
+            time.sleep(NOW_INTERVAL - time.time() % NOW_INTERVAL)
 
 
 if __name__ == "__main__":

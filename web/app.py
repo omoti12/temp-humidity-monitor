@@ -2,6 +2,7 @@
 """温湿度モニター Webサイト: sht31_logger.py が書いたCSVを読んで表示する。"""
 import csv
 import hmac
+import json
 import os
 from datetime import datetime, timedelta
 
@@ -118,11 +119,27 @@ def api_data():
     })
 
 
+def now_reading():
+    """ロガーが5秒ごとに書く now.json を読む。古い・無いときはCSVの最新値を使う。"""
+    try:
+        with open(os.path.join(LOG_DIR, "now.json"), encoding="utf-8") as f:
+            n = json.load(f)
+        ts = datetime.fromisoformat(n["iso"])
+        age = datetime.now(ts.tzinfo) - ts
+        if age < timedelta(minutes=2):
+            n["time"] = ts.strftime("%Y-%m-%d %H:%M:%S")
+            n["stale"] = False
+            return n
+    except (OSError, ValueError, KeyError):
+        pass
+    day = datetime.now()
+    return latest_reading(load(day), day)
+
+
 @app.route("/api/now")
 def api_now():
     """現在値だけを返す。GitHub Pages のサイトから読むため、別サイトからの読み込みを許可する。"""
-    day = datetime.now()
-    resp = jsonify({"latest": latest_reading(load(day), day)})
+    resp = jsonify({"latest": now_reading()})
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Cache-Control"] = "no-store"
     return resp
