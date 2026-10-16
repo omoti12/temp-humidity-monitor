@@ -7,8 +7,10 @@ WorkingDirectory=/home/iot-user/temp-monitor/web
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/web/app.py
 Environment=LOG_DIR=/home/iot-user/templog
 Environment=PORT=8000
-Environment=WEB_USER=admin
-Environment=WEB_PASSWORD=ここを自分のパスワードに変える
+# ラズパイ内サイトにパスワードをかけるときは、下の2行の先頭の # を外して書き換える
+# （外部に公開されるのは /api/now の現在値だけ）
+#Environment=WEB_USER=admin
+#Environment=WEB_PASSWORD=ここを自分のパスワードに変える
 Restart=always
 RestartSec=10
 User=iot-user

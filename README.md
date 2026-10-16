@@ -11,7 +11,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 - 1分ごとに温度・湿度を測ってSDカードにCSVで保存（日付ごとに1ファイル）
 - 30℃以上で【高温警報】、21℃以下で【低温警報】のメールを送信（正常に戻ったら【回復】メール、異常が続けば60分ごとに再通知）
 - Webサイトで現在の温度・湿度・状態と、10分ごとのグラフを表示（スマホ対応）
-  - GitHub Pages：どこからでも見られる。10分ごとに更新
+  - GitHub Pages：どこからでも見られる。グラフは10分ごと、現在値はリアルタイム（ラズパイから直接読む）
   - ラズパイ内のサイト（`http://ラズパイのIP:8000`）：同じネットワーク内から。1分ごとに更新
 - 10分ごとにグラフ画像（PNG）を作成。ラズパイにつないだモニターで表示できる
 - 1時間ごとに記録をGoogleドライブへバックアップ
@@ -19,6 +19,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 ```
 センサー ─▶ ラズパイ（1分ごとに記録・警報メール）
               ├─ 10分ごと ─▶ GitHub Pages（どこからでも閲覧）
+              ├─ 現在値 ─▶ Tailscale Funnel（/api/now だけ公開）─▶ GitHub Pages の画面
               └─ 1時間ごと ─▶ Googleドライブ（バックアップ）
 ```
 
@@ -68,7 +69,7 @@ sudo cp /home/iot-user/temp-monitor/systemd/* /etc/systemd/system/
 
 ```
 sudo nano /etc/systemd/system/sht31-logger.service   # 警報メールを使うとき：3行の # を外し、送信元・アプリパスワード・宛先を書く
-sudo nano /etc/systemd/system/temp-web.service       # ラズパイ内サイトのパスワード
+sudo nano /etc/systemd/system/temp-web.service       # ラズパイ内サイトにパスワードをかけるとき
 ```
 
 Gmailの場合は、Googleアカウントで2段階認証をオンにして「アプリパスワード」を作り、それを使う。
@@ -109,7 +110,23 @@ Source を「Deploy from a branch」、Branch を `gh-pages` / `/(root)` にし�
 sudo systemctl enable --now pages-publish.timer
 ```
 
-### 6. Googleドライブへのバックアップ
+### 6. 現在値をリアルタイムで見られるようにする（Tailscale Funnel）
+
+GitHub Pages は更新回数に制限があるので、現在値だけはラズパイから直接読む。
+ラズパイ内サイトを起動し、その中の `/api/now`（現在値）だけをインターネットに公開する。
+
+```
+sudo systemctl enable --now temp-web
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up                 # 表示されたURLを開いてログイン
+sudo tailscale funnel --bg --set-path /api/now http://127.0.0.1:8000/api/now
+```
+
+最後のコマンドで有効化のURLが表示されたら、開いて許可する。
+表示された `https://〜.ts.net/api/now` をブラウザで開き、現在値が出れば成功。
+そのURLを `pages/index.html` の `NOW_URL` に書いて push すると、サイトの現在値がリアルタイムになる。
+
+### 7. Googleドライブへのバックアップ
 
 ```
 rclone config        # n → 名前 gdrive → 種類 drive → あとはEnter

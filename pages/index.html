@@ -138,6 +138,34 @@ async function getJson(path) {
   return res.ok ? res.json() : null;
 }
 
+// ラズパイの現在値の窓口（Tailscale Funnel のURL + /api/now）。空なら10分ごとのデータだけで表示する
+const NOW_URL = "";
+let live = false;   // ラズパイから直接現在値を読めているか
+
+function showLatest(l, isLive) {
+  const ts = new Date(l.time);
+  $("temp").innerHTML = `${l.temp.toFixed(1)}<small>℃</small>`;
+  $("hum").innerHTML = `${l.hum.toFixed(1)}<small>%</small>`;
+  $("status").textContent = l.status;
+  $("status").className = "value " + l.status;
+  $("stale").hidden = Date.now() - ts < (isLive ? 5 : 30) * 60 * 1000;
+  $("stale").textContent = `${isLive ? 5 : 30}分以上データが更新されていません`;
+  $("updated").textContent = `最終測定 ${fmt(ts)} ${ts.toTimeString().slice(0, 5)}`
+    + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
+}
+
+async function loadNow() {
+  if (!NOW_URL) return;
+  try {
+    const res = await fetch(NOW_URL, { cache: "no-store" });
+    const n = res.ok ? await res.json() : null;
+    live = !!(n && n.latest);
+    if (live) showLatest({ ...n.latest, time: n.latest.iso }, true);
+  } catch (e) {
+    live = false;   // ラズパイにつながらないときは10分ごとのデータを表示する
+  }
+}
+
 async function load() {
   let info, dayData;
   try {
@@ -149,15 +177,7 @@ async function load() {
   if (!info) return;
   const d = { ...info, points: dayData ? dayData.points : [] };
 
-  if (d.latest) {
-    const ts = new Date(d.latest.time);
-    $("temp").innerHTML = `${d.latest.temp.toFixed(1)}<small>℃</small>`;
-    $("hum").innerHTML = `${d.latest.hum.toFixed(1)}<small>%</small>`;
-    $("status").textContent = d.latest.status;
-    $("status").className = "value " + d.latest.status;
-    $("stale").hidden = Date.now() - ts < 30 * 60 * 1000;
-    $("updated").textContent = `最終記録 ${fmt(ts)} ${ts.toTimeString().slice(0, 5)}（10分ごとに更新）`;
-  }
+  if (d.latest && !live) showLatest(d.latest, false);
 
   const byTime = Object.fromEntries(d.points.map((p) => [p.time, p]));
   const pick = (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null));
@@ -190,8 +210,9 @@ $("today").onclick = () => { day = fmt(new Date()); load(); };
 $("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
 
 buildCharts();
-load();
-setInterval(load, 60 * 1000);   // 1分ごとに自動更新
+setInterval(load, 60 * 1000);   // グラフは1分ごとに読み直す
+loadNow().then(load);
+setInterval(loadNow, 15 * 1000); // 現在値は15秒ごとに読み直す
 </script>
 </body>
 </html>

@@ -21,7 +21,8 @@ app = Flask(__name__)
 
 @app.before_request
 def require_login():
-    if not WEB_PASSWORD:
+    # 現在値だけは公開サイト（GitHub Pages）から読めるようにログイン不要にする
+    if not WEB_PASSWORD or request.path == "/api/now":
         return None
     auth = request.authorization
     if (auth and hmac.compare_digest(auth.username or "", WEB_USER)
@@ -92,25 +93,39 @@ def index():
     return render_template("index.html", step=STEP_MIN)
 
 
+def latest_reading(rows, day):
+    """一番新しい記録。今日の分がまだなければ前日の最後の値を使う。"""
+    src = rows or load(day - timedelta(days=1))
+    if not src:
+        return None
+    ts, t, h, st = src[-1]
+    return {"time": ts.strftime("%Y-%m-%d %H:%M"), "iso": ts.astimezone().isoformat(),
+            "temp": t, "hum": h,
+            "status": st or status(t),   # ロガーが記録した状態を優先する
+            "stale": (datetime.now() - ts) > timedelta(minutes=5)}
+
+
 @app.route("/api/data")
 def api_data():
     day = parse_day(request.args.get("day"))
     rows = load(day)
-    latest = None
-    # 今日の分がまだなければ前日の最後の値を「現在値」にする
-    src = rows or load(day - timedelta(days=1))
-    if src:
-        ts, t, h, st = src[-1]
-        latest = {"time": ts.strftime("%Y-%m-%d %H:%M"), "temp": t, "hum": h,
-                  "status": st or status(t),   # ロガーが記録した状態を優先する
-                  "stale": (datetime.now() - ts) > timedelta(minutes=5)}
     return jsonify({
         "day": day.strftime("%Y-%m-%d"),
         "points": every_10min(rows),
-        "latest": latest,
+        "latest": latest_reading(rows, day),
         "high": TEMP_HIGH,
         "low": TEMP_LOW,
     })
+
+
+@app.route("/api/now")
+def api_now():
+    """現在値だけを返す。GitHub Pages のサイトから読むため、別サイトからの読み込みを許可する。"""
+    day = datetime.now()
+    resp = jsonify({"latest": latest_reading(load(day), day)})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/download")
