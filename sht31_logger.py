@@ -12,7 +12,7 @@ from smbus2 import SMBus, i2c_msg
 
 ADDR = 0x45            # ADDRピンをVINに接続した場合。GNDまたは未接続なら0x44
 INTERVAL = 60          # 測定間隔（秒）
-LOG_DIR = "/home/pi/templog"
+LOG_DIR = "/home/iot-user/templog"
 
 TEMP_HIGH = 25.0       # この温度以上で「高温」警報
 TEMP_LOW = 21.0        # この温度以下で「低温」警報

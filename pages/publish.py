@@ -13,8 +13,8 @@ import sys
 from datetime import datetime
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_DIR = os.environ.get("LOG_DIR", "/home/pi/templog")
-PUBLISH_DIR = os.environ.get("PUBLISH_DIR", "/home/pi/pages-publish")   # gh-pages 用の作業フォルダ
+LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
+PUBLISH_DIR = os.environ.get("PUBLISH_DIR", "/home/iot-user/pages-publish")   # gh-pages 用の作業フォルダ
 REMOTE = os.environ.get("PAGES_REMOTE", "git@github.com:omoti12/temp-humidity-monitor.git")
 BRANCH = "gh-pages"
 STEP_MIN = 10          # グラフの間隔（分）

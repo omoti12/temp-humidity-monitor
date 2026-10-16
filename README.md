@@ -32,7 +32,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `web/` | ラズパイ内で動くサイト（Flask） |
 | `systemd/` | 自動起動・定期実行の設定 |
 
-記録先は `/home/pi/templog/`。プログラムは `/home/pi/temp-monitor/`（このリポジトリ）から直接動かす。
+記録先は `/home/iot-user/templog/`。プログラムは `/home/iot-user/temp-monitor/`（このリポジトリ）から直接動かす。
 
 ## 必要なもの
 
@@ -42,7 +42,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 
 ## セットアップ
 
-ユーザー名が `pi` 以外の場合は、各ファイルの `/home/pi` と `User=pi` を書き換える。
+ユーザー名は `iot-user` 前提。違う場合は、各ファイルの `/home/iot-user` と `User=iot-user` を書き換える。
 
 ### 1. GitHub の準備（PCで）
 
@@ -53,7 +53,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 
 ```
 sudo apt install git python3-smbus2 python3-matplotlib python3-flask fonts-noto-cjk rclone
-git clone https://github.com/omoti12/temp-humidity-monitor.git /home/pi/temp-monitor
+git clone https://github.com/omoti12/temp-humidity-monitor.git /home/iot-user/temp-monitor
 ```
 
 I2Cを有効にしておく（`sudo raspi-config` → Interface Options → I2C）。
@@ -61,7 +61,7 @@ I2Cを有効にしておく（`sudo raspi-config` → Interface Options → I2C�
 ### 3. 自動起動の設定ファイルを入れる
 
 ```
-sudo cp /home/pi/temp-monitor/systemd/* /etc/systemd/system/
+sudo cp /home/iot-user/temp-monitor/systemd/* /etc/systemd/system/
 ```
 
 パスワードは **コピーした先（/etc/systemd/system）** で書き換える。リポジトリ内のファイルには書かないこと。
@@ -96,7 +96,7 @@ Settings → Deploy keys → Add deploy key に貼り付ける。**「Allow writ
 
 ```
 ssh -T git@github.com
-python3 /home/pi/temp-monitor/pages/publish.py
+python3 /home/iot-user/temp-monitor/pages/publish.py
 ```
 
 「公開しました」と出たら、GitHubの Settings → Pages で
@@ -120,7 +120,7 @@ rclone ls gdrive:温湿度記録   # CSVが並べば成功
 ## 更新するとき
 
 ```
-cd /home/pi/temp-monitor && git pull
+cd /home/iot-user/temp-monitor && git pull
 sudo systemctl restart sht31-logger temp-web
 ```
 
@@ -128,7 +128,7 @@ sudo systemctl restart sht31-logger temp-web
 
 ```
 systemctl status sht31-logger           # 記録の動作状況
-tail -f /home/pi/templog/*.csv           # 記録の中身
+tail -f /home/iot-user/templog/*.csv           # 記録の中身
 journalctl -u sht31-logger -f            # 警報メールの送信ログ
 journalctl -u pages-publish -n 20        # GitHub Pages への公開ログ
 systemctl list-timers                    # 定期実行の予定

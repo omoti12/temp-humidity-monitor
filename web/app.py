@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
-LOG_DIR = os.environ.get("LOG_DIR", "/home/pi/templog")
+LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
 STEP_MIN = 10          # グラフの間隔（分）
 TEMP_HIGH = 25.0       # sht31_logger.py と同じ値にする
 TEMP_LOW = 21.0

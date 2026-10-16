@@ -3,15 +3,15 @@ Description=Temperature/humidity monitor website
 After=network.target
 
 [Service]
-WorkingDirectory=/home/pi/temp-monitor/web
-ExecStart=/usr/bin/python3 /home/pi/temp-monitor/web/app.py
-Environment=LOG_DIR=/home/pi/templog
+WorkingDirectory=/home/iot-user/temp-monitor/web
+ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/web/app.py
+Environment=LOG_DIR=/home/iot-user/templog
 Environment=PORT=8000
 Environment=WEB_USER=admin
 Environment=WEB_PASSWORD=ここを自分のパスワードに変える
 Restart=always
 RestartSec=10
-User=pi
+User=iot-user
 
 [Install]
 WantedBy=multi-user.target

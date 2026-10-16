@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
-LOG_DIR = "/home/pi/templog"
+LOG_DIR = "/home/iot-user/templog"
 OUT_PATH = os.path.join(LOG_DIR, "graph.png")
 STEP_MIN = 10          # グラフの間隔（分）
 

@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=pi
+User=iot-user
 # 記録フォルダをGoogleドライブの「温湿度記録」フォルダへコピーする（増えた分・変わった分だけ送る）
 # copy なので、ラズパイ側で消してもドライブ側は消えない
-ExecStart=/usr/bin/rclone copy /home/pi/templog gdrive:温湿度記録 --include "*.csv"
+ExecStart=/usr/bin/rclone copy /home/iot-user/templog gdrive:温湿度記録 --include "*.csv"
