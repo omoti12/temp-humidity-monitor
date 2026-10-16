@@ -63,9 +63,9 @@ def status(t, prev="正常"):
 
 
 def send_mail(subject, body):
+    """送信したらTrue、メール設定がなく送らなかったらFalseを返す。"""
     if not (MAIL_USER and MAIL_PASSWORD and MAIL_TO):
-        print("メール設定がないため送信しません", flush=True)
-        return
+        return False
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = MAIL_USER
@@ -75,6 +75,7 @@ def send_mail(subject, body):
         s.starttls()
         s.login(MAIL_USER, MAIL_PASSWORD)
         s.send_message(msg)
+    return True
 
 
 class Alarm:
@@ -100,8 +101,10 @@ class Alarm:
         body = (f"日時: {now:%Y-%m-%d %H:%M}\n温度: {t:.1f}℃\n湿度: {h:.1f}%\n"
                 f"状態: {st}\n\n設定: {TEMP_LOW:g}℃以下で低温、{TEMP_HIGH:g}℃以上で高温")
         try:
-            send_mail(subject, body)
-            print(f"メール送信: {subject}", flush=True)
+            if send_mail(subject, body):
+                print(f"メール送信: {subject}", flush=True)
+            else:
+                print(f"メール設定がないため送信しません: {subject}", flush=True)
             self.notified = st
             self.last_sent = time.time()
         except Exception as e:
