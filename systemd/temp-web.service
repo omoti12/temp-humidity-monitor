@@ -1,0 +1,17 @@
+[Unit]
+Description=Temperature/humidity monitor website
+After=network.target
+
+[Service]
+WorkingDirectory=/home/pi/web
+ExecStart=/usr/bin/python3 /home/pi/web/app.py
+Environment=LOG_DIR=/home/pi/templog
+Environment=PORT=8000
+Environment=WEB_USER=admin
+Environment=WEB_PASSWORD=ここを自分のパスワードに変える
+Restart=always
+RestartSec=10
+User=pi
+
+[Install]
+WantedBy=multi-user.target

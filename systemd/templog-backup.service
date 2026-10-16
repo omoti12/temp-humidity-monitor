@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up temperature logs to Google Drive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+# 記録フォルダをGoogleドライブの「温湿度記録」フォルダへコピーする（増えた分・変わった分だけ送る）
+# copy なので、ラズパイ側で消してもドライブ側は消えない
+ExecStart=/usr/bin/rclone copy /home/pi/templog gdrive:温湿度記録 --include "*.csv"
