@@ -124,7 +124,7 @@ sudo tailscale funnel --bg --set-path /api/now http://127.0.0.1:8000/api/now
 
 最後のコマンドで有効化のURLが表示されたら、開いて許可する。
 表示された `https://〜.ts.net/api/now` をブラウザで開き、現在値が出れば成功。
-そのURLを `pages/index.html` の `NOW_URL` に書いて push すると、サイトの現在値がリアルタイムになる。
+そのURLを `pages/index.html` の `NOW_URL` に書いて push し、ラズパイで `git pull` すると、次の公開（10分以内）からサイトの現在値がリアルタイムになる。
 
 ### 7. Googleドライブへのバックアップ
 

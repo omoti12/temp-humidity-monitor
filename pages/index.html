@@ -139,7 +139,7 @@ async function getJson(path) {
 }
 
 // ラズパイの現在値の窓口（Tailscale Funnel のURL + /api/now）。空なら10分ごとのデータだけで表示する
-const NOW_URL = "";
+const NOW_URL = "https://raspberrypi.tailfa1dcc.ts.net/api/now";
 let live = false;   // ラズパイから直接現在値を読めているか
 
 function showLatest(l, isLive) {
