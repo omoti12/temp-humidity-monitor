@@ -1,0 +1,10 @@
+[Unit]
+Description=Publish temperature data to GitHub Pages every 10 minutes
+
+[Timer]
+# 毎時0分40秒、10分40秒…（その分の記録が書き終わってから）
+OnCalendar=*:00/10:40
+Persistent=true
+
+[Install]
+WantedBy=timers.target

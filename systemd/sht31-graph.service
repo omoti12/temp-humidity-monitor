@@ -3,5 +3,5 @@ Description=SHT31 graph update
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /home/pi/sht31_graph.py
+ExecStart=/usr/bin/python3 /home/pi/temp-monitor/sht31_graph.py
 User=pi

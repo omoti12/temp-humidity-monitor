@@ -1,0 +1,9 @@
+[Unit]
+Description=Publish temperature data to GitHub Pages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+ExecStart=/usr/bin/python3 /home/pi/temp-monitor/pages/publish.py

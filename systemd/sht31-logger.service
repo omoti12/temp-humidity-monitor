@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/sht31_logger.py
+ExecStart=/usr/bin/python3 /home/pi/temp-monitor/sht31_logger.py
 # 警報メールの設定（Gmailの例）。宛先が複数ならカンマ区切り
 Environment=MAIL_USER=送信用アドレス@gmail.com
 Environment=MAIL_PASSWORD=Gmailのアプリパスワード16文字
