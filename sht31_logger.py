@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import smtplib
+import sys
 import time
 from datetime import datetime
 from email.message import EmailMessage
@@ -24,12 +25,32 @@ TEMP_LOW = 21.0        # この温度以下で「低温」警報
 HYSTERESIS = 0.5       # 正常に戻ったと判断する幅（30℃なら29.5℃以下で回復）
 REMIND_MIN = 60        # 異常が続くとき、この間隔（分）で再通知する。0なら再通知しない
 
-# メール設定（環境変数で渡す。sht31-logger.service に書く）
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-MAIL_USER = os.environ.get("MAIL_USER", "")          # 送信元アドレス
-MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")  # Gmailならアプリパスワード
-MAIL_TO = [a.strip() for a in os.environ.get("MAIL_TO", "").split(",") if a.strip()]
+# メール設定ファイル（mail.env.example を参考に作る）。本人だけが読めるようにしておく
+MAIL_CONFIG = "/home/iot-user/.config/temp-monitor/mail.env"
+
+
+def load_mail_config(path):
+    """KEY=VALUE 形式の設定ファイルを読む。環境変数があればそちらを優先する。"""
+    conf = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    conf[k.strip()] = v.strip().strip('"')
+    except FileNotFoundError:
+        pass
+    conf.update({k: v for k, v in os.environ.items() if k.startswith(("MAIL_", "SMTP_"))})
+    return conf
+
+
+_mail = load_mail_config(MAIL_CONFIG)
+SMTP_HOST = _mail.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(_mail.get("SMTP_PORT", 587))
+MAIL_USER = _mail.get("MAIL_USER", "")                          # 送信元アドレス
+MAIL_PASSWORD = _mail.get("MAIL_PASSWORD", "").replace(" ", "")  # Gmailならアプリパスワード
+MAIL_TO = [a.strip() for a in _mail.get("MAIL_TO", "").split(",") if a.strip()]
 
 
 def crc8(data):
@@ -160,5 +181,20 @@ def main():
             time.sleep(NOW_INTERVAL - time.time() % NOW_INTERVAL)
 
 
+def test_mail():
+    """設定ファイルの内容でテストメールを1通送る: python3 sht31_logger.py --test-mail"""
+    if not (MAIL_USER and MAIL_PASSWORD and MAIL_TO):
+        sys.exit(f"メール設定が足りません。{MAIL_CONFIG} に MAIL_USER・MAIL_PASSWORD・MAIL_TO を書いてください")
+    print(f"送信元: {MAIL_USER}\n宛先: {', '.join(MAIL_TO)}\n送信中...")
+    try:
+        send_mail("【テスト】温湿度モニター", f"警報メールのテストです。\n日時: {datetime.now():%Y-%m-%d %H:%M}\n\n"
+                  f"設定: {TEMP_LOW:g}℃以下で低温、{TEMP_HIGH:g}℃以上で高温")
+    except smtplib.SMTPAuthenticationError:
+        sys.exit("送信に失敗しました: ログインできません。MAIL_USER とアプリパスワードを確認してください")
+    except Exception as e:
+        sys.exit(f"送信に失敗しました: {e}")
+    print("送信しました。受信箱（届かなければ迷惑メールフォルダ）を確認してください")
+
+
 if __name__ == "__main__":
-    main()
+    test_mail() if "--test-mail" in sys.argv else main()

@@ -69,8 +69,18 @@ sudo cp /home/iot-user/temp-monitor/systemd/* /etc/systemd/system/
 パスワードは **コピーした先（/etc/systemd/system）** で書き換える。リポジトリ内のファイルには書かないこと。
 
 ```
-sudo nano /etc/systemd/system/sht31-logger.service   # 警報メールを使うとき：3行の # を外し、送信元・アプリパスワード・宛先を書く
 sudo nano /etc/systemd/system/temp-web.service       # ラズパイ内サイトにパスワードをかけるとき
+```
+
+警報メールを使うときは、設定ファイルを作って送信元・アプリパスワード・宛先を書く：
+
+```
+mkdir -p ~/.config/temp-monitor
+cp ~/temp-monitor/mail.env.example ~/.config/temp-monitor/mail.env
+chmod 600 ~/.config/temp-monitor/mail.env     # 自分だけが読めるようにする
+nano ~/.config/temp-monitor/mail.env
+python3 ~/temp-monitor/sht31_logger.py --test-mail   # テストメールを送る
+sudo systemctl restart sht31-logger
 ```
 
 Gmailの場合は、Googleアカウントで2段階認証をオンにして「アプリパスワード」を作り、それを使う。

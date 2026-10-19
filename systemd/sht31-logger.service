@@ -5,11 +5,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/sht31_logger.py
-# 警報メールの設定（Gmailの例）。使うときは下の3行の先頭の # を外して書き換える
-# 宛先が複数ならカンマ区切り
-#Environment=MAIL_USER=送信用アドレス@gmail.com
-#Environment=MAIL_PASSWORD=Gmailのアプリパスワード16文字
-#Environment=MAIL_TO=受け取るアドレス@example.com
+# 警報メールの設定は /home/iot-user/.config/temp-monitor/mail.env に書く（mail.env.example 参照）
 Restart=always
 RestartSec=10
 User=iot-user
