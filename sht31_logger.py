@@ -76,6 +76,7 @@ def read_sht31(bus):
 
 
 def status(t, prev="正常"):
+    t = round(t, 1)     # 表示・記録と同じ小数第1位の値で判定する（29.97℃が「30.0℃ 正常」と見えないように）
     if t >= TEMP_HIGH:
         return "高温"
     if t <= TEMP_LOW:
