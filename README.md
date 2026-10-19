@@ -178,6 +178,22 @@ SDカードは書き込み回数で消耗するので、書き込みを減らし
 - **UPS（停電対策）**：電源が急に切れるとSDカードが壊れることがある
 - **高耐久のSDカード**を使う
 
+止まりにくくする・止まったときに原因を追えるようにする設定（ラズパイで1回だけ）：
+
+```
+# Wi-Fiの省電力モードを切る（Wi-Fiが切れて外から見えなくなるのを防ぐ）
+printf '[connection]\nwifi.powersave = 2\n' | sudo tee /etc/NetworkManager/conf.d/wifi-powersave-off.conf
+sudo systemctl restart NetworkManager
+
+# 動作ログを再起動後も残す（最大50MB）。止まる直前のログは journalctl -b -1 で見られる
+sudo mkdir -p /etc/systemd/journald.conf.d /var/log/journal
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=50M\n' | sudo tee /etc/systemd/journald.conf.d/persistent.conf
+sudo systemctl restart systemd-journald
+```
+
+電源アダプタはラズパイ5用の 5V 5A（27W）を使う。力不足だと負荷がかかったときに止まる
+（`vcgencmd get_throttled` が `throttled=0x0` 以外なら電圧不足が起きている）。
+
 ラズパイにつないだモニターにグラフ画像を出し続けるとき：
 `feh --fullscreen --reload 60 /dev/shm/temp-monitor/graph.png`
 
