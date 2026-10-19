@@ -185,6 +185,10 @@ def test_mail():
     """設定ファイルの内容でテストメールを1通送る: python3 sht31_logger.py --test-mail"""
     if not (MAIL_USER and MAIL_PASSWORD and MAIL_TO):
         sys.exit(f"メール設定が足りません。{MAIL_CONFIG} に MAIL_USER・MAIL_PASSWORD・MAIL_TO を書いてください")
+    for name, value in [("MAIL_USER", MAIL_USER), ("MAIL_PASSWORD", MAIL_PASSWORD), ("MAIL_TO", ",".join(MAIL_TO))]:
+        if not value.isascii():
+            sys.exit(f"{name} に日本語や全角文字が入っています（見本の文字が残っていないか、半角で入力したか確認してください）\n"
+                     f"  ファイル: {MAIL_CONFIG}")
     print(f"送信元: {MAIL_USER}\n宛先: {', '.join(MAIL_TO)}\n送信中...")
     try:
         send_mail("【テスト】温湿度モニター", f"警報メールのテストです。\n日時: {datetime.now():%Y-%m-%d %H:%M}\n\n"
