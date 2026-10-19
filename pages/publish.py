@@ -24,6 +24,7 @@ gh-pages ブランチは毎回コミットを1つに上書き（amend + force pu
 #   GitHub への書き込みには、ラズパイの鍵（Deploy key）を使う
 # ============================================================
 import csv
+import fcntl
 import json
 import os
 import shutil
@@ -39,6 +40,8 @@ PUBLISH_DIR = os.environ.get("PUBLISH_DIR", "/home/iot-user/pages-publish")   # 
 # 送り先のGitHubリポジトリ（SSH鍵で書き込む）
 REMOTE = os.environ.get("PAGES_REMOTE", "git@github.com:omoti12/temp-humidity-monitor.git")
 BRANCH = "gh-pages"    # GitHub Pages が公開するブランチ
+# 同時に2つ動かないようにするための鍵ファイル（メモリ上に置く）
+RUN_LOCK = os.environ.get("PUBLISH_LOCK", "/dev/shm/temp-monitor/publish.lock")
 STEP_MIN = 10          # グラフの間隔（分）
 TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
 TEMP_LOW = 21.0
@@ -153,6 +156,17 @@ def git(*args):
 
 
 def publish():
+    # 同時に2つ動かないようにする（自動の公開と手動の公開が重なったときは、先の方が終わるまで待つ）
+    # この鍵はプログラムが終われば（途中で止まっても）自動で外れる
+    os.makedirs(os.path.dirname(RUN_LOCK), exist_ok=True)
+    lock = open(RUN_LOCK, "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    # 鍵を持っているので、ほかに git は動いていない。それでも git の「使用中」の札（index.lock）が
+    # 残っていれば、前回の途中で電源が切れたときの残りものなので消す
+    stale = os.path.join(PUBLISH_DIR, ".git", "index.lock")
+    if os.path.exists(stale):
+        os.remove(stale)
+        print("前回の途中で止まったときの残りもの（index.lock）を消しました")
     # 初回だけ: 作業フォルダを git のフォルダとして準備し、送り先を登録する
     if not os.path.isdir(os.path.join(PUBLISH_DIR, ".git")):
         os.makedirs(PUBLISH_DIR, exist_ok=True)
