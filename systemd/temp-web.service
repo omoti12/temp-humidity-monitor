@@ -1,3 +1,12 @@
+# ============================================================
+# ラズパイ内のWebサイト（web/app.py）を常に動かし続けるための設定
+#   ・http://ラズパイのIP:8000 で画面が見られる
+#   ・現在値の窓口 /api/now も、このプログラムが提供している
+#     （公開サイトの現在値表示に必要。止まると公開サイトは10分ごとの表示になる）
+# よく使うコマンド
+#   状態を見る : systemctl status temp-web
+#   再起動する : sudo systemctl restart temp-web
+# ============================================================
 [Unit]
 Description=Temperature/humidity monitor website
 After=network.target
@@ -5,12 +14,14 @@ After=network.target
 [Service]
 WorkingDirectory=/home/iot-user/temp-monitor/web
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/web/app.py
+# 記録（CSV）のある場所と、サイトの番号（ポート）
 Environment=LOG_DIR=/home/iot-user/templog
 Environment=PORT=8000
 # ラズパイ内サイトにパスワードをかけるときは、下の2行の先頭の # を外して書き換える
 # （外部に公開されるのは /api/now の現在値だけ）
 #Environment=WEB_USER=admin
 #Environment=WEB_PASSWORD=ここを自分のパスワードに変える
+# 止まったら10秒後に自動で再起動する
 Restart=always
 RestartSec=10
 User=iot-user

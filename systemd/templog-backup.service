@@ -1,3 +1,9 @@
+# ============================================================
+# 記録（CSV）をGoogleドライブへ1回コピーする設定
+# 実行のタイミングは templog-backup.timer が決める（1時間ごと）
+# 先に rclone config で「gdrive」という名前のGoogleドライブ接続を作っておく必要がある
+# 手動で今すぐコピー : sudo systemctl start templog-backup
+# ============================================================
 [Unit]
 Description=Back up temperature logs to Google Drive
 After=network-online.target

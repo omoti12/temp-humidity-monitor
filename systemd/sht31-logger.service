@@ -1,14 +1,29 @@
+# ============================================================
+# 記録プログラム（sht31_logger.py）を常に動かし続けるための設定
+#   ・ラズパイの電源を入れると自動で起動する
+#   ・止まったら10秒後に自動で再起動する
+# よく使うコマンド
+#   状態を見る   : systemctl status sht31-logger
+#   ログを見る   : journalctl -u sht31-logger -n 20
+#   再起動する   : sudo systemctl restart sht31-logger
+# このファイルを書き換えたら : sudo cp でコピー → sudo systemctl daemon-reload → 再起動
+# ============================================================
 [Unit]
 Description=SHT31 temperature/humidity logger
+# ネットにつながってから起動する（警報メールを送るため）
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+# 実行するコマンド
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/sht31_logger.py
 # 警報メールの設定は /home/iot-user/.config/temp-monitor/mail.env に書く（mail.env.example 参照）
+# 止まったら必ず再起動する（10秒待ってから）
 Restart=always
 RestartSec=10
+# iot-user として動かす（root では動かさない）
 User=iot-user
 
 [Install]
+# 電源を入れて普通に起動したときに、自動で始める
 WantedBy=multi-user.target

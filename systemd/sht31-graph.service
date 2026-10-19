@@ -1,7 +1,13 @@
+# ============================================================
+# グラフ画像を1回作る設定（sht31_graph.py を実行して終わる）
+# 実行のタイミングは sht31-graph.timer が決める（10分ごと）
+# 手動で今すぐ作る : sudo systemctl start sht31-graph
+# ============================================================
 [Unit]
 Description=SHT31 graph update
 
 [Service]
+# oneshot = 1回実行して終わるプログラム
 Type=oneshot
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/sht31_graph.py
 User=iot-user

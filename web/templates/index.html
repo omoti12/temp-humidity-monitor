@@ -1,21 +1,36 @@
 <!doctype html>
+<!--
+  ============================================================
+  ラズパイ内のサイトの画面（http://ラズパイのIP:8000）
+  web/app.py が表示する。{{ step }} の部分は app.py が数字（10）に置き換える
+
+  データの読み先
+    ・api/data?day=日付 を1分ごとに読み、現在値とグラフを更新する
+  公開サイトの画面（pages/index.html）とほぼ同じ作り
+  ============================================================
+-->
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<!-- スマホでも見やすい幅で表示する -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>温湿度モニター</title>
+<!-- グラフを描く部品（Chart.js）。web/static に置いてある -->
 <script src="static/chart.umd.js"></script>
 <style>
+  /* ---- 色の設定（ここを変えると全体の色が変わる）---- */
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
   }
+  /* スマホやPCがダークモードのときの色 */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
     }
   }
+  /* ---- 全体のレイアウト ---- */
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
@@ -23,21 +38,26 @@
   header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
   h1 { font-size: 1.3rem; margin: 0; }
   .updated { color: var(--muted); font-size: .85rem; }
+  /* ---- 上の3つのカード（現在の温度・湿度・状態）---- */
   .now { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
   .label { color: var(--muted); font-size: .85rem; }
   .value { font-size: 2.4rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .value small { font-size: 1rem; font-weight: 400; margin-left: 2px; }
   #temp { color: var(--temp); } #hum { color: var(--hum); }
+  /* 状態の文字の色（正常=緑、高温=オレンジ、低温=紫） */
   #status.正常 { color: var(--ok); } #status.高温 { color: var(--warn); } #status.低温 { color: var(--out); }
   .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
+  /* ---- 日付を選ぶボタンの並び ---- */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
   .controls button, .controls input, .controls a {
     font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--card); color: var(--text); text-decoration: none; cursor: pointer; }
+  /* ---- グラフ ---- */
   .chart-card { margin-bottom: 12px; }
   .chart-box { position: relative; height: 260px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
   @media (max-width: 600px) {
     .now { grid-template-columns: 1fr 1fr; }
     .now .card:last-child { grid-column: span 2; }
@@ -48,11 +68,13 @@
 </head>
 <body>
 <main>
+  <!-- 見出しと最終記録の時刻 -->
   <header>
     <h1>温湿度モニター</h1>
     <span class="updated" id="updated"></span>
   </header>
 
+  <!-- 現在の温度・湿度・状態（中身は下の load() が書き込む） -->
   <section class="now">
     <div class="card"><div class="label">現在の温度</div><div class="value" id="temp">--</div></div>
     <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div></div>
@@ -60,6 +82,7 @@
       <div class="stale" id="stale" hidden>5分以上データが届いていません</div></div>
   </section>
 
+  <!-- 表示する日を切り替えるボタンと、CSVのダウンロード -->
   <div class="controls">
     <button id="prev">◀ 前日</button>
     <input type="date" id="day">
@@ -68,6 +91,7 @@
     <a id="dl" href="#">CSVダウンロード</a>
   </div>
 
+  <!-- グラフを描く場所 -->
   <div class="card chart-card">
     <div class="label">温度（{{ step }}分ごとの平均、薄い帯は最高〜最低）</div>
     <div class="chart-box"><canvas id="tempChart"></canvas></div>
@@ -80,9 +104,18 @@
 </main>
 
 <script>
+// ============================================================
+// 画面を動かすプログラム（JavaScript）
+// ============================================================
+
+// よく使う短縮の関数
+// $("temp")      … id="temp" の部品を取り出す
+// css("--temp")  … 上の :root で決めた色を取り出す
+// fmt(日付)      … 日付を "2026-10-19" の形にする
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const fmt = (d) => d.toLocaleDateString("sv-SE");   // YYYY-MM-DD
+// 今表示している日（最初は今日）
 let day = fmt(new Date());
 let tempChart, humChart;
 
@@ -94,10 +127,13 @@ for (let m = 0; m < 24 * 60; m += {{ step }})
 // 横軸の目盛り: 狭い画面は6時間ごと、広い画面は2時間ごと
 const tickEvery = () => (window.innerWidth < 600 ? 36 : 12);
 
+// グラフ共通の見た目の設定（unit は "℃" か "%"）
 function lineOpts(unit) {
   return {
     responsive: true, maintainAspectRatio: false, animation: false, spanGaps: false,
+    // グラフにマウスを乗せると、その時刻の値をまとめて表示する
     interaction: { mode: "index", intersect: false },
+    // 名前が "_" で始まるデータ（最高・最低の帯）は、凡例と吹き出しに出さない
     plugins: { legend: { labels: { color: css("--muted"), filter: (i) => !i.text.startsWith("_") } },
                tooltip: { filter: (i) => !i.dataset.label.startsWith("_"),
                           callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}${unit}` } } },
@@ -110,14 +146,18 @@ function lineOpts(unit) {
   };
 }
 
+// グラフを2つ作る（最初は空。データは load() で入れる）
 function buildCharts() {
   const temp = css("--temp"), hum = css("--hum");
   tempChart = new Chart($("tempChart"), {
     type: "line",
     data: { labels: slots, datasets: [
+      // [0] 最高 と [1] 最低：この2本の間を薄く塗って「帯」にする
       { label: "_max", data: [], borderWidth: 0, pointRadius: 0, fill: "+1", backgroundColor: temp + "22" },
       { label: "_min", data: [], borderWidth: 0, pointRadius: 0, fill: false },
+      // [2] 温度の平均
       { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 2, borderWidth: 2 },
+      // [3] [4] 警報の基準の点線
       { label: "高温", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
       { label: "低温", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
     ] },
@@ -132,6 +172,7 @@ function buildCharts() {
   });
 }
 
+// web/app.py の api/data からデータを読み、現在値とグラフを更新する（1分ごと・日付を変えたとき）
 async function load() {
   let res;
   try {
@@ -142,6 +183,7 @@ async function load() {
   }
   const d = await res.json();
 
+  // 上の3つのカードと最終記録の時刻を書き換える（5分以上記録がなければ注意を出す）
   if (d.latest) {
     $("temp").innerHTML = `${d.latest.temp.toFixed(1)}<small>℃</small>`;
     $("hum").innerHTML = `${d.latest.hum.toFixed(1)}<small>%</small>`;
@@ -151,6 +193,7 @@ async function load() {
     $("updated").textContent = `最終記録 ${d.latest.time}`;
   }
 
+  // データを 0:00〜23:50 の軸に並べる（記録がない時間は null = 空白）
   const byTime = Object.fromEntries(d.points.map((p) => [p.time, p]));
   const pick = (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null));
   const ds = tempChart.data.datasets;
@@ -163,11 +206,13 @@ async function load() {
   tempChart.update();
   humChart.update();
 
+  // 記録がない日は「この日の記録はありません」を出す
   $("empty").hidden = d.points.length > 0;
   $("day").value = day;
   $("dl").href = `download?day=${day}`;
 }
 
+// 表示する日を n 日ずらす（前日 = -1、翌日 = +1）
 function shift(n) {
   const t = new Date(day + "T00:00:00");
   t.setDate(t.getDate() + n);
@@ -175,11 +220,13 @@ function shift(n) {
   load();
 }
 
+// ボタンを押したときの動き
 $("prev").onclick = () => shift(-1);
 $("next").onclick = () => shift(1);
 $("today").onclick = () => { day = fmt(new Date()); load(); };
 $("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
 
+// ---- ページを開いたときに始まる処理 ----
 buildCharts();
 load();
 setInterval(load, 60 * 1000);   // 1分ごとに自動更新
