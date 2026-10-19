@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
 LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
+NOW_PATH = os.environ.get("NOW_PATH", "/dev/shm/temp-monitor/now.json")   # sht31_logger.py と同じ場所
 STEP_MIN = 10          # グラフの間隔（分）
 TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
 TEMP_LOW = 21.0
@@ -122,7 +123,7 @@ def api_data():
 def now_reading():
     """ロガーが5秒ごとに書く now.json を読む。古い・無いときはCSVの最新値を使う。"""
     try:
-        with open(os.path.join(LOG_DIR, "now.json"), encoding="utf-8") as f:
+        with open(NOW_PATH, encoding="utf-8") as f:
             n = json.load(f)
         ts = datetime.fromisoformat(n["iso"])
         age = datetime.now(ts.tzinfo) - ts

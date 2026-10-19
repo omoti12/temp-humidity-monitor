@@ -33,7 +33,8 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `web/` | ラズパイ内で動くサイト（Flask） |
 | `systemd/` | 自動起動・定期実行の設定 |
 
-記録先は `/home/iot-user/templog/`。プログラムは `/home/iot-user/temp-monitor/`（このリポジトリ）から直接動かす。
+記録先は `/home/iot-user/templog/`（SDカード）。
+現在値 `now.json` とグラフ画像 `graph.png` は `/dev/shm/temp-monitor/`（メモリ上。再起動で消え、すぐ作り直される）。プログラムは `/home/iot-user/temp-monitor/`（このリポジトリ）から直接動かす。
 
 ## 必要なもの
 
@@ -150,6 +151,25 @@ journalctl -u sht31-logger -f            # 警報メールの送信ログ
 journalctl -u pages-publish -n 20        # GitHub Pages への公開ログ
 systemctl list-timers                    # 定期実行の予定
 ```
+
+## 長く動かすために
+
+SDカードは書き込み回数で消耗するので、書き込みを減らしている。
+
+| データ | 場所 | 書き込み |
+|---|---|---|
+| 記録（CSV） | SDカード | 1分に1行追記 |
+| 現在値（5秒ごと）・グラフ画像（10分ごと） | メモリ（`/dev/shm`） | SDカードには書かない |
+| 公開用の作業データ | SDカード | 10分ごと。古い版は毎日3時台に自動で掃除 |
+
+ほかに効果が大きいもの：
+
+- **Googleドライブへのバックアップ**（手順7）：SDカードが壊れても記録が残る
+- **UPS（停電対策）**：電源が急に切れるとSDカードが壊れることがある
+- **高耐久のSDカード**を使う
+
+ラズパイにつないだモニターにグラフ画像を出し続けるとき：
+`feh --fullscreen --reload 60 /dev/shm/temp-monitor/graph.png`
 
 ## 設定値
 

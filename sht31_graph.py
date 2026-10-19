@@ -11,7 +11,8 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
 LOG_DIR = "/home/iot-user/templog"
-OUT_PATH = os.path.join(LOG_DIR, "graph.png")
+# グラフ画像はメモリ上（/dev/shm）に置く。10分ごとに作り直すのでSDカードに書く必要はない
+OUT_PATH = "/dev/shm/temp-monitor/graph.png"
 STEP_MIN = 10          # グラフの間隔（分）
 
 TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
@@ -73,6 +74,7 @@ def draw(times, temps, hums, day):
     ax2.xaxis.set_major_locator(mdates.HourLocator(interval=2))
 
     fig.tight_layout()
+    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     tmp = OUT_PATH + ".tmp.png"
     fig.savefig(tmp, dpi=100)
     os.replace(tmp, OUT_PATH)   # 表示中の画像が書きかけにならないよう、置き換えで更新する

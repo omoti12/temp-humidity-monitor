@@ -113,6 +113,8 @@ def publish():
         os.makedirs(PUBLISH_DIR, exist_ok=True)
         git("init", "-q", "-b", BRANCH)
         git("remote", "add", "origin", REMOTE)
+    # amend で置き換えた古い版が作業フォルダに溜まらないよう、履歴の記録を残さない
+    git("config", "core.logAllRefUpdates", "false")
     build()
     git("add", "-A")
     has_commit = subprocess.run(["git", "-C", PUBLISH_DIR, "rev-parse", "-q", "--verify", "HEAD"],
@@ -121,6 +123,11 @@ def publish():
     git("commit", "-q", "--amend", "-m", msg) if has_commit else git("commit", "-q", "-m", msg)
     git("push", "-q", "-f", "origin", BRANCH)
     print(f"公開しました: {msg}")
+    now = datetime.now()
+    if now.hour == 3 and now.minute < 10:     # 1日1回、使わなくなった古い版を消す
+        git("reflog", "expire", "--expire=now", "--all")
+        git("gc", "-q", "--prune=now")
+        print("古いデータを掃除しました")
 
 
 if __name__ == "__main__":

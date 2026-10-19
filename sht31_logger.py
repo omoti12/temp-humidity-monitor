@@ -16,6 +16,8 @@ ADDR = 0x45            # ADDRピンをVINに接続した場合。GNDまたは未
 INTERVAL = 60          # 記録（CSV）・警報判定の間隔（秒）
 NOW_INTERVAL = 5       # 現在値（now.json）の更新間隔（秒）。INTERVAL を割り切れる値にする
 LOG_DIR = "/home/iot-user/templog"
+# 現在値はメモリ上（/dev/shm）に置く。5秒ごとの上書きでSDカードを消耗させないため。再起動で消えてよい
+NOW_PATH = "/dev/shm/temp-monitor/now.json"
 
 TEMP_HIGH = 30.0       # この温度以上で「高温」警報
 TEMP_LOW = 21.0        # この温度以下で「低温」警報
@@ -127,8 +129,8 @@ def append_csv(now, t, h, st):
 
 def write_now(now, t, h, st):
     """現在値を now.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する。"""
-    os.makedirs(LOG_DIR, exist_ok=True)
-    path = os.path.join(LOG_DIR, "now.json")
+    path = NOW_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump({"iso": now.astimezone().isoformat(timespec="seconds"),
                    "temp": round(t, 1), "hum": round(h, 1), "status": st}, f, ensure_ascii=False)
