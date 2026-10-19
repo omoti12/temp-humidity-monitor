@@ -13,6 +13,7 @@
 #   /                 … サイトの画面
 #   /api/data?day=日付 … その日の10分ごとのデータと最新値（JSON）
 #   /api/now          … 現在値（JSON）。ログイン不要
+#   /api/recipients   … 警報メールの宛先の表示・追加・削除（管理用パスワードが必要）
 #   /download?day=日付 … その日のCSVをダウンロード
 #
 # 動かし方
@@ -23,9 +24,17 @@ import csv
 import hmac
 import json
 import os
+import re
+import sys
+import threading
+import time
 from datetime import datetime, timedelta
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_file
+
+# 1つ上のフォルダにある alert_mail.py（警報メールの設定・宛先・送信）を使えるようにする
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import alert_mail  # noqa: E402
 
 # ---- 設定値（環境変数で上書きできる。temp-web.service の Environment= で設定）----
 LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
@@ -46,7 +55,8 @@ app = Flask(__name__)
 def require_login():
     # どのページを開くときも、最初にここを通る（パスワードの確認）
     # 現在値だけは公開サイト（GitHub Pages）から読めるようにログイン不要にする
-    if not WEB_PASSWORD or request.path == "/api/now":
+    # 宛先の管理（/api/recipients）は、下の check_admin() で別の管理用パスワードを確認する
+    if not WEB_PASSWORD or request.path in ("/api/now", "/api/recipients"):
         return None
     # ブラウザが送ってきたユーザー名・パスワードを確認する
     # （hmac.compare_digest は、比べる時間から中身を推測されにくい比べ方）
@@ -189,6 +199,113 @@ def api_now():
     # 古い値が使い回されないよう、ブラウザや途中の経路に保存させない
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+# ============================================================
+# 警報メールの宛先の管理（公開サイトの「警報メールの宛先」画面から使う）
+# ============================================================
+
+# 宛先の画面を置いているサイト。ほかのサイトからは使えないようにする
+ADMIN_ORIGIN = "https://omoti12.github.io"
+MAX_RECIPIENTS = 20         # 宛先の上限（いたずらで大量に登録されないように）
+# メールアドレスの形（○○@○○.○○）になっているかの確認
+EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
+
+# パスワードの総当たりを防ぐ: 10分間に10回まちがえたら、しばらく受け付けない
+_fail_lock = threading.Lock()
+_fail_times = []
+FAIL_LIMIT, FAIL_WINDOW = 10, 600
+
+
+def admin_cors(resp):
+    # 公開サイト（ADMIN_ORIGIN）のページからだけ、この窓口を使えるようにする
+    resp.headers["Access-Control-Allow-Origin"] = ADMIN_ORIGIN
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+    resp.headers["Vary"] = "Origin"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def admin_error(message, code):
+    return admin_cors(jsonify({"error": message})), code
+
+
+def check_admin():
+    """管理用パスワードを確認する。正しければ None、まちがっていればエラーの応答を返す"""
+    password = alert_mail.admin_password()
+    if not password:
+        return admin_error("ラズパイに管理用パスワード（ADMIN_PASSWORD）が設定されていません", 503)
+    now = time.time()
+    with _fail_lock:
+        _fail_times[:] = [t for t in _fail_times if now - t < FAIL_WINDOW]
+        if len(_fail_times) >= FAIL_LIMIT:
+            return admin_error("パスワードを何度もまちがえたため、10分ほど受け付けません", 429)
+    # 画面からは「Authorization: Bearer パスワード」の形で送られてくる
+    given = request.headers.get("Authorization", "").removeprefix("Bearer ")
+    if hmac.compare_digest(given.encode(), password.encode()):
+        return None
+    with _fail_lock:
+        _fail_times.append(now)
+    time.sleep(1)       # まちがえたときは少し待たせて、総当たりを遅くする
+    return admin_error("パスワードが違います", 401)
+
+
+@app.route("/api/recipients", methods=["GET", "POST", "DELETE", "OPTIONS"])
+def api_recipients():
+    # ブラウザが本番の前に送ってくる確認（OPTIONS）には、使ってよい条件だけ返す
+    if request.method == "OPTIONS":
+        return admin_cors(Response(status=204))
+    err = check_admin()
+    if err:
+        return err
+
+    # 表示: 今の宛先の一覧を返す
+    if request.method == "GET":
+        return admin_cors(jsonify({"recipients": alert_mail.get_recipients()}))
+
+    email = str((request.get_json(silent=True) or {}).get("email", "")).strip()
+
+    # 追加
+    if request.method == "POST":
+        if not EMAIL_RE.match(email):
+            return admin_error("メールアドレスの形が正しくありません（半角で入力してください）", 400)
+
+        def add(lst):
+            if email.lower() in (a.lower() for a in lst):
+                raise ValueError("このアドレスはすでに登録されています")
+            if len(lst) >= MAX_RECIPIENTS:
+                raise ValueError(f"宛先は{MAX_RECIPIENTS}件までです")
+            lst.append(email)
+        try:
+            lst = alert_mail.update_recipients(add)
+        except ValueError as e:
+            return admin_error(str(e), 400)
+        # 追加したアドレスに「宛先に追加されました」と知らせる（知らないうちに登録されないように）
+        try:
+            notified = alert_mail.send(
+                "【温湿度モニター】警報メールの宛先に追加されました",
+                "このアドレスが、温湿度モニターの警報メールの宛先に追加されました。\n"
+                "温度が基準を外れたときに、このアドレスへ警報メールが届きます。\n\n"
+                "心当たりがない場合は、管理者に連絡してください。", to=[email])
+        except Exception:
+            notified = False
+        print(f"警報メールの宛先を追加: {email}", flush=True)
+        return admin_cors(jsonify({"recipients": lst, "notified": notified}))
+
+    # 削除（最後の1件は消せない。消すと警報がどこにも届かなくなるため）
+    def remove(lst):
+        if email not in lst:
+            raise ValueError("このアドレスは登録されていません")
+        if len(lst) <= 1:
+            raise ValueError("最後の1件は削除できません（警報がどこにも届かなくなるため）")
+        lst.remove(email)
+    try:
+        lst = alert_mail.update_recipients(remove)
+    except ValueError as e:
+        return admin_error(str(e), 400)
+    print(f"警報メールの宛先を削除: {email}", flush=True)
+    return admin_cors(jsonify({"recipients": lst}))
 
 
 @app.route("/download")

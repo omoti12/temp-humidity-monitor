@@ -18,14 +18,15 @@
 # ---- 使う部品（ライブラリ）の読み込み ----
 import csv                      # CSVファイルの読み書き
 import json                     # JSONファイル（now.json）の書き込み
-import os                       # フォルダ作成・ファイル操作・環境変数
-import smtplib                  # メール送信（SMTP）
+import os                       # フォルダ作成・ファイル操作
+import smtplib                  # メール送信のエラーの種類を見分ける
 import sys                      # コマンドの引数を見る・エラーで終了する
 import time                     # 待ち時間・現在時刻（秒）
 from datetime import datetime   # 日付・時刻
-from email.message import EmailMessage   # メールの本文・件名を組み立てる
 
 from smbus2 import SMBus, i2c_msg   # I2C通信でセンサーとやり取りする
+
+import alert_mail               # 警報メールの設定・宛先・送信（alert_mail.py）
 
 # ============================================================
 # 設定値（ここを書き換えると動きが変わる）
@@ -47,37 +48,9 @@ TEMP_LOW = 21.0        # この温度以下で「低温」警報
 HYSTERESIS = 0.5       # 正常に戻ったと判断する幅（30℃なら29.5℃以下で回復）
 REMIND_MIN = 60        # 異常が続くとき、この間隔（分）で再通知する。0なら再通知しない
 
-# メール設定ファイル（mail.env.example を参考に作る）。本人だけが読めるようにしておく
-MAIL_CONFIG = "/home/iot-user/.config/temp-monitor/mail.env"
-
-
-def load_mail_config(path):
-    """KEY=VALUE 形式の設定ファイルを読む。環境変数があればそちらを優先する。"""
-    conf = {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                # 空行と「#」で始まる説明の行は飛ばし、「名前=値」の行だけ読む
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    conf[k.strip()] = v.strip().strip('"')
-    except FileNotFoundError:
-        pass    # 設定ファイルがなければメールは送らない（記録などは普通に動く）
-    # 環境変数（MAIL_〜 / SMTP_〜）が設定されていれば、ファイルの値より優先する
-    conf.update({k: v for k, v in os.environ.items() if k.startswith(("MAIL_", "SMTP_"))})
-    return conf
-
-
-# ---- メール設定を読み込む（プログラム起動時に1回だけ）----
-# 設定ファイルを書き換えたら、sht31-logger を再起動すると反映される
-_mail = load_mail_config(MAIL_CONFIG)
-SMTP_HOST = _mail.get("SMTP_HOST", "smtp.gmail.com")    # メールサーバー（初期値はGmail）
-SMTP_PORT = int(_mail.get("SMTP_PORT", 587))            # メールサーバーのポート番号
-MAIL_USER = _mail.get("MAIL_USER", "")                          # 送信元アドレス
-MAIL_PASSWORD = _mail.get("MAIL_PASSWORD", "").replace(" ", "")  # Gmailならアプリパスワード
-# 宛先はカンマ区切りで複数書ける。["a@example.com", "b@example.com"] のようなリストにする
-MAIL_TO = [a.strip() for a in _mail.get("MAIL_TO", "").split(",") if a.strip()]
+# メールの設定（送信元・パスワード）と宛先は alert_mail.py が送るたびに読む
+#   送信元・パスワード : /home/iot-user/.config/temp-monitor/mail.env
+#   宛先              : サイトの「警報メールの宛先」画面で追加・削除できる
 
 
 # ============================================================
@@ -137,22 +110,8 @@ def status(t, prev="正常"):
 # ============================================================
 
 def send_mail(subject, body):
-    """送信したらTrue、メール設定がなく送らなかったらFalseを返す。"""
-    if not (MAIL_USER and MAIL_PASSWORD and MAIL_TO):
-        return False
-    # メールを組み立てる（件名・送信元・宛先・本文）
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = MAIL_USER
-    msg["To"] = ", ".join(MAIL_TO)
-    msg.set_content(body)
-    # メールサーバーにつないで、暗号化（STARTTLS）→ ログイン → 送信
-    # 20秒で応答がなければあきらめる（ネットが切れていても止まり続けないように）
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
-        s.starttls()
-        s.login(MAIL_USER, MAIL_PASSWORD)
-        s.send_message(msg)
-    return True
+    """警報メールの宛先全員に送る。送信したらTrue、メール設定がなく送らなかったらFalseを返す。"""
+    return alert_mail.send(subject, body)
 
 
 class Alarm:
@@ -261,14 +220,16 @@ def main():
 
 def test_mail():
     """設定ファイルの内容でテストメールを1通送る: python3 sht31_logger.py --test-mail"""
+    _, _, user, password = alert_mail.sender()
+    to = alert_mail.get_recipients()
     # 設定が足りないとき・日本語や全角が混ざっているときは、分かりやすいメッセージで止める
-    if not (MAIL_USER and MAIL_PASSWORD and MAIL_TO):
-        sys.exit(f"メール設定が足りません。{MAIL_CONFIG} に MAIL_USER・MAIL_PASSWORD・MAIL_TO を書いてください")
-    for name, value in [("MAIL_USER", MAIL_USER), ("MAIL_PASSWORD", MAIL_PASSWORD), ("MAIL_TO", ",".join(MAIL_TO))]:
+    if not (user and password and to):
+        sys.exit(f"メール設定が足りません。{alert_mail.MAIL_CONFIG} に MAIL_USER・MAIL_PASSWORD・MAIL_TO を書いてください")
+    for name, value in [("MAIL_USER", user), ("MAIL_PASSWORD", password), ("宛先", ",".join(to))]:
         if not value.isascii():
             sys.exit(f"{name} に日本語や全角文字が入っています（見本の文字が残っていないか、半角で入力したか確認してください）\n"
-                     f"  ファイル: {MAIL_CONFIG}")
-    print(f"送信元: {MAIL_USER}\n宛先: {', '.join(MAIL_TO)}\n送信中...")
+                     f"  ファイル: {alert_mail.MAIL_CONFIG}")
+    print(f"送信元: {user}\n宛先: {', '.join(to)}\n送信中...")
     try:
         send_mail("【テスト】温湿度モニター", f"警報メールのテストです。\n日時: {datetime.now():%Y-%m-%d %H:%M}\n\n"
                   f"設定: {TEMP_LOW:g}℃以下で低温、{TEMP_HIGH:g}℃以上で高温")

@@ -60,6 +60,19 @@
   .chart-card { margin-bottom: 12px; }
   .chart-box { position: relative; height: 260px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  /* ---- 警報メールの宛先（管理）---- */
+  .admin { margin-top: 24px; }
+  .admin summary { cursor: pointer; font-weight: 600; }
+  .admin .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .admin input { flex: 1 1 220px; min-width: 0; font: inherit; padding: 6px 10px; border-radius: 8px;
+                 border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .admin button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+                  background: var(--card); color: var(--text); cursor: pointer; }
+  .admin ul { list-style: none; padding: 0; margin: 12px 0 0; }
+  .admin li { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+              padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .admin .msg { font-size: .9rem; margin: 10px 0 0; min-height: 1.2em; }
+  .admin .msg.error { color: var(--warn); }
   /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
   @media (max-width: 600px) {
     .now { grid-template-columns: 1fr 1fr; }
@@ -104,6 +117,22 @@
     <div class="chart-box"><canvas id="humChart"></canvas></div>
   </div>
   <div class="empty" id="empty" hidden>この日の記録はありません</div>
+
+  <!-- 警報メールの宛先の管理（押すと開く。管理用パスワードが必要） -->
+  <details class="card admin">
+    <summary>警報メールの宛先（管理）</summary>
+    <div class="label" style="margin-top:8px">表示・追加・削除には管理用パスワードが必要です</div>
+    <form class="row" id="pwForm">
+      <input type="password" id="pw" placeholder="管理用パスワード" autocomplete="current-password">
+      <button type="submit">表示</button>
+    </form>
+    <ul id="rcpts"></ul>
+    <form class="row" id="addForm" hidden>
+      <input type="email" id="newEmail" placeholder="追加するメールアドレス" autocomplete="off">
+      <button type="submit">追加</button>
+    </form>
+    <p class="msg" id="adminMsg"></p>
+  </details>
 </main>
 
 <script>
@@ -262,6 +291,91 @@ $("prev").onclick = () => shift(-1);
 $("next").onclick = () => shift(1);
 $("today").onclick = () => { day = fmt(new Date()); load(); };
 $("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
+
+// ============================================================
+// 警報メールの宛先の管理
+//   ラズパイの窓口 /api/recipients に、管理用パスワードを付けて頼む
+//   パスワードはこのページを開いている間だけ覚えておく（保存はしない）
+// ============================================================
+const ADMIN_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/recipients") : "";
+let adminPw = "";
+
+// メッセージを表示する（isError が true なら注意の色）
+function adminMsg(text, isError) {
+  $("adminMsg").textContent = text;
+  $("adminMsg").className = "msg" + (isError ? " error" : "");
+}
+
+// ラズパイの窓口を呼ぶ。method は "GET"（表示）"POST"（追加）"DELETE"（削除）
+async function adminCall(method, email) {
+  if (!ADMIN_URL) throw new Error("ラズパイの窓口が設定されていません");
+  let res;
+  try {
+    res = await fetch(ADMIN_URL, {
+      method, cache: "no-store",
+      headers: { "Authorization": `Bearer ${adminPw}`, "Content-Type": "application/json" },
+      body: email ? JSON.stringify({ email }) : undefined,
+    });
+  } catch (e) {
+    throw new Error("ラズパイにつながりません。電源とネットを確認してください");
+  }
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || `エラーが起きました（${res.status}）`);
+  return d;
+}
+
+// 宛先の一覧を表示する（アドレスは textContent で入れ、文字をそのまま表示する）
+function renderRecipients(list) {
+  const ul = $("rcpts");
+  ul.replaceChildren();
+  for (const email of list) {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.textContent = email;
+    const btn = document.createElement("button");
+    btn.textContent = "削除";
+    btn.onclick = async () => {
+      if (!confirm(`${email} を宛先から削除しますか？`)) return;
+      try {
+        renderRecipients((await adminCall("DELETE", email)).recipients);
+        adminMsg(`${email} を削除しました`);
+      } catch (e) { adminMsg(e.message, true); }
+    };
+    li.append(span, btn);
+    ul.append(li);
+  }
+  $("addForm").hidden = false;
+}
+
+// 「表示」: パスワードを確かめて、一覧を出す
+$("pwForm").onsubmit = async (e) => {
+  e.preventDefault();
+  adminPw = $("pw").value;
+  adminMsg("確認中...");
+  try {
+    renderRecipients((await adminCall("GET")).recipients);
+    adminMsg("");
+  } catch (err) {
+    $("rcpts").replaceChildren();
+    $("addForm").hidden = true;
+    adminMsg(err.message, true);
+  }
+};
+
+// 「追加」: 入力したアドレスを宛先に加える（追加したアドレスにはお知らせメールが届く）
+$("addForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $("newEmail").value.trim();
+  if (!email) return;
+  adminMsg("追加中...");
+  try {
+    const d = await adminCall("POST", email);
+    renderRecipients(d.recipients);
+    $("newEmail").value = "";
+    adminMsg(d.notified ? `${email} を追加し、お知らせメールを送りました`
+                        : `${email} を追加しました（お知らせメールは送れませんでした）`);
+  } catch (err) { adminMsg(err.message, true); }
+};
 
 // ---- ページを開いたときに始まる処理 ----
 buildCharts();

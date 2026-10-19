@@ -28,6 +28,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | ファイル | 内容 |
 |---|---|
 | `sht31_logger.py` | 測定・CSV記録・警報メール |
+| `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
 | `pages/` | GitHub Pages 用のサイトと公開スクリプト |
 | `web/` | ラズパイ内で動くサイト（Flask） |
@@ -84,6 +85,21 @@ sudo systemctl restart sht31-logger
 ```
 
 Gmailの場合は、Googleアカウントで2段階認証をオンにして「アプリパスワード」を作り、それを使う。
+
+#### サイトから警報メールの宛先を追加・削除する
+
+公開サイトの一番下「警報メールの宛先（管理）」から、宛先を追加・削除できる。
+
+1. `~/.config/temp-monitor/mail.env` に `ADMIN_PASSWORD=（管理用パスワード）` を書く（半角英数字で長めに）
+2. 宛先の管理窓口もインターネットから使えるようにする（現在値の窓口と同じ Tailscale Funnel）
+   ```
+   sudo tailscale funnel --bg --set-path /api/recipients http://127.0.0.1:8000/api/recipients
+   ```
+3. `sudo systemctl restart temp-web sht31-logger`
+
+- 追加したアドレスには「宛先に追加されました」というお知らせメールが届く
+- 宛先は `~/.config/temp-monitor/recipients.json` に保存される（一度でも変更すると、`MAIL_TO` の代わりにこちらが使われる）
+- パスワードを10分間に10回まちがえると、しばらく受け付けない。宛先は20件まで。最後の1件は削除できない
 
 ### 4. 記録・警報・グラフを開始
 
