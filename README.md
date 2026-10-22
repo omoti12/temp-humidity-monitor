@@ -14,6 +14,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 - Webサイトで現在の温度・湿度・状態と、10分ごとのグラフを表示（スマホ対応）
   - GitHub Pages：どこからでも見られる。グラフは10分ごと、現在値は5秒ごと（ラズパイから直接読む）
   - ラズパイ内のサイト（`http://ラズパイのIP:8000`）：同じネットワーク内から。1分ごとに更新
+- グラフは拡大できる（表示範囲のボタン、PCはドラッグ、スマホは2本指）
 - 10分ごとにグラフ画像（PNG）を作成。ラズパイにつないだモニターで表示できる
 - 1時間ごとに記録をGoogleドライブへバックアップ
 
@@ -235,4 +236,8 @@ sudo systemctl restart systemd-journald
 
 ## ライセンス
 
-`web/static/chart.umd.js` は [Chart.js](https://www.chartjs.org/)（MIT License、`web/static/chart.js-LICENSE.md`）。
+`web/static/` の次のファイルは外部のもの（いずれも MIT License。ライセンス文は同じフォルダの `*-LICENSE.md`）。
+
+- `chart.umd.js`：[Chart.js](https://www.chartjs.org/) 4.4.1（グラフ）
+- `chartjs-plugin-zoom.min.js`：[chartjs-plugin-zoom](https://github.com/chartjs/chartjs-plugin-zoom) 2.0.1（グラフの拡大）
+- `hammer.min.js`：[Hammer.js](https://hammerjs.github.io/) 2.0.8（スマホの指の操作）

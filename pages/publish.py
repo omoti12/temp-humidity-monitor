@@ -52,6 +52,10 @@ SITE_FILES = {         # 公開するファイル: 公開先の名前 → この
     "index.html": "pages/index.html",
     "chart.umd.js": "web/static/chart.umd.js",
     "chart.js-LICENSE.md": "web/static/chart.js-LICENSE.md",
+    "hammer.min.js": "web/static/hammer.min.js",
+    "hammerjs-LICENSE.md": "web/static/hammerjs-LICENSE.md",
+    "chartjs-plugin-zoom.min.js": "web/static/chartjs-plugin-zoom.min.js",
+    "chartjs-plugin-zoom-LICENSE.md": "web/static/chartjs-plugin-zoom-LICENSE.md",
 }
 
 

@@ -17,6 +17,9 @@
 <title>温湿度モニター</title>
 <!-- グラフを描く部品（Chart.js）。web/static に置いてある -->
 <script src="static/chart.umd.js"></script>
+<!-- グラフを拡大・移動する部品（hammer.min.js はスマホの指の操作用。zoom より先に読む） -->
+<script src="static/hammer.min.js"></script>
+<script src="static/chartjs-plugin-zoom.min.js"></script>
 <style>
   /* ---- 色の設定（ここを変えると全体の色が変わる）---- */
   :root {
@@ -60,6 +63,11 @@
     background: var(--card); color: var(--text); text-decoration: none; cursor: pointer; }
   /* ---- グラフ ---- */
   .chart-card { margin-bottom: 12px; }
+  /* ---- グラフの表示範囲のボタン ---- */
+  .zoombar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .zoombar button { font: inherit; font-size: .85rem; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line);
+                    background: var(--card); color: var(--text); cursor: pointer; }
+  .zoombar .hint { color: var(--muted); font-size: .8rem; }
   .chart-box { position: relative; height: 260px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
   /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
@@ -96,6 +104,16 @@
     <a id="dl" href="#">CSVダウンロード</a>
   </div>
 
+  <!-- グラフの表示範囲（拡大）のボタン。温度と湿度のグラフは一緒に動く -->
+  <div class="zoombar">
+    <span class="label">表示範囲</span>
+    <button data-hours="24">全体</button>
+    <button data-hours="6">6時間</button>
+    <button data-hours="3">3時間</button>
+    <button data-hours="1">1時間</button>
+    <span class="hint" id="zoomHint"></span>
+  </div>
+
   <!-- グラフを描く場所 -->
   <div class="card chart-card">
     <div class="label">温度（{{ step }}分ごとの平均、薄い帯は最高〜最低）</div>
@@ -129,8 +147,16 @@ const slots = [];
 for (let m = 0; m < 24 * 60; m += {{ step }})
   slots.push(String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"));
 
-// 横軸の目盛り: 狭い画面は6時間ごと、広い画面は2時間ごと
-const tickEvery = () => (window.innerWidth < 600 ? 36 : 12);
+// スマホなど指で操作する画面か（拡大のしかたを変える）
+const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
+// 横軸の目盛りの間隔（何マスおきに時刻を書くか。1マス = 10分）
+// 表示している範囲の広さに合わせて、10分・30分・1時間・2時間・6時間・12時間ごとから選ぶ
+function labelStep(count) {
+  const maxLabels = window.innerWidth < 600 ? 5 : 12;
+  for (const step of [1, 3, 6, 12, 36, 72]) if (count / step <= maxLabels) return step;
+  return 72;
+}
 
 // グラフ共通の見た目の設定（unit は "℃" か "%"）
 function lineOpts(unit) {
@@ -141,11 +167,26 @@ function lineOpts(unit) {
     // 名前が "_" で始まるデータ（最高・最低の帯）は、凡例と吹き出しに出さない
     plugins: { legend: { labels: { color: css("--muted"), filter: (i) => !i.text.startsWith("_") } },
                tooltip: { filter: (i) => !i.dataset.label.startsWith("_"),
-                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}${unit}` } } },
+                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}${unit}` } },
+               // 拡大・移動の設定（横方向＝時刻だけ。温度と湿度のグラフは syncRange で一緒に動かす）
+               zoom: {
+                 limits: { x: { min: 0, max: slots.length - 1, minRange: 5 } },
+                 zoom: { mode: "x",
+                         // PC: ドラッグで範囲を選んで拡大、Ctrl＋ホイールで拡大・縮小
+                         drag: { enabled: !isTouch, backgroundColor: "rgba(100, 120, 150, 0.15)" },
+                         wheel: { enabled: !isTouch, modifierKey: "ctrl" },
+                         // スマホ: 2本指で拡大・縮小
+                         pinch: { enabled: true },
+                         onZoomComplete: ({ chart }) => syncRange(chart) },
+                 // 拡大した後の左右の移動（PC は Shift＋ドラッグ、スマホは1本指）
+                 pan: { enabled: true, mode: "x", modifierKey: isTouch ? null : "shift",
+                        onPanComplete: ({ chart }) => syncRange(chart) },
+               } },
     scales: {
       x: { ticks: { color: css("--muted"), maxRotation: 0, autoSkip: false,
-                    callback: (v, i) => i % tickEvery() === 0 ? slots[i] : "" },
-           grid: { color: (c) => c.index % tickEvery() === 0 ? css("--line") : "transparent" } },
+                    callback: (v, i, ticks) => v % labelStep(ticks.length) === 0 ? slots[v] : "" },
+           grid: { color: (c) => (c.tick && c.tick.value % labelStep(c.chart.scales.x.ticks.length) === 0)
+                                   ? css("--line") : "transparent" } },
       y: { ticks: { color: css("--muted"), callback: (v) => v + unit }, grid: { color: css("--line") } },
     },
   };
@@ -222,19 +263,51 @@ async function load() {
   $("dl").href = `download?day=${day}`;
 }
 
-// 表示する日を n 日ずらす（前日 = -1、翌日 = +1）
+// ============================================================
+// グラフの拡大
+// ============================================================
+
+// 片方のグラフを拡大・移動したら、もう片方も同じ範囲にする
+function syncRange(src) {
+  const { min, max } = src.scales.x;
+  for (const c of [tempChart, humChart]) if (c !== src) c.zoomScale("x", { min, max }, "none");
+}
+
+// ボタン: 最後の記録を右端にして、h 時間分を表示する（24 なら全体に戻す）
+function showHours(h) {
+  if (h >= 24) {
+    tempChart.resetZoom("none");
+    humChart.resetZoom("none");
+    return;
+  }
+  const temps = tempChart.data.datasets[2].data;
+  let last = temps.length - 1;
+  while (last > 0 && temps[last] == null) last--;      // 最後の記録の位置
+  const n = h * 6;                                     // h 時間 = 6 × h マス
+  const max = Math.max(last, n);
+  for (const c of [tempChart, humChart]) c.zoomScale("x", { min: max - n, max }, "none");
+}
+document.querySelectorAll(".zoombar button").forEach((b) => {
+  b.onclick = () => showHours(Number(b.dataset.hours));
+});
+$("zoomHint").textContent = isTouch
+  ? "2本指で拡大・1本指で左右に移動"
+  : "ドラッグで範囲を選んで拡大・Shift＋ドラッグで移動・Ctrl＋ホイールで拡大縮小";
+
+// 表示する日を n 日ずらす（前日 = -1、翌日 = +1）。日を変えたら拡大は元に戻す
 function shift(n) {
   const t = new Date(day + "T00:00:00");
   t.setDate(t.getDate() + n);
   day = fmt(t);
+  showHours(24);
   load();
 }
 
 // ボタンを押したときの動き
 $("prev").onclick = () => shift(-1);
 $("next").onclick = () => shift(1);
-$("today").onclick = () => { day = fmt(new Date()); load(); };
-$("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
+$("today").onclick = () => { day = fmt(new Date()); showHours(24); load(); };
+$("day").onchange = (e) => { if (e.target.value) { day = e.target.value; showHours(24); load(); } };
 
 // ---- ページを開いたときに始まる処理 ----
 buildCharts();
