@@ -22,12 +22,14 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
+    --hot-warn: #b08800; --cold-warn: #9775fa;
   }
   /* スマホやPCがダークモードのときの色 */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
+      --hot-warn: #fcc419; --cold-warn: #d0bfff;
     }
   }
   /* ---- 全体のレイアウト ---- */
@@ -45,8 +47,11 @@
   .value { font-size: 2.4rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .value small { font-size: 1rem; font-weight: 400; margin-left: 2px; }
   #temp { color: var(--temp); } #hum { color: var(--hum); }
-  /* 状態の文字の色（正常=緑、高温=オレンジ、低温=紫） */
-  #status.正常 { color: var(--ok); } #status.高温 { color: var(--warn); } #status.低温 { color: var(--out); }
+  /* 状態の文字の色（正常=緑、高温注意=黄、高温警報=オレンジ、低温注意=薄紫、低温警報=紫） */
+  /* 「高温」「低温」は前の版で記録した状態の名前（警報と同じ色にする） */
+  #status.正常 { color: var(--ok); }
+  #status.高温注意 { color: var(--hot-warn); } #status.高温警報, #status.高温 { color: var(--warn); }
+  #status.低温注意 { color: var(--cold-warn); } #status.低温警報, #status.低温 { color: var(--out); }
   .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
   /* ---- 日付を選ぶボタンの並び ---- */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -157,9 +162,11 @@ function buildCharts() {
       { label: "_min", data: [], borderWidth: 0, pointRadius: 0, fill: false },
       // [2] 温度の平均
       { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 2, borderWidth: 2 },
-      // [3] [4] 警報の基準の点線
-      { label: "高温", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
-      { label: "低温", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      // [3]〜[6] 警報（破線）と注意（点線）の基準
+      { label: "高温警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高温注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温注意", data: [], borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温警報", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
     ] },
     options: lineOpts("℃"),
   });
@@ -200,8 +207,11 @@ async function load() {
   ds[0].data = pick("temp_max");
   ds[1].data = pick("temp_min");
   ds[2].data = pick("temp");
-  ds[3].data = slots.map(() => d.high);
-  ds[4].data = slots.map(() => d.low);
+  // 基準の線（古いデータで thresholds がないときは、前の版の high / low を警報の線として使う）
+  const th = d.thresholds || { high_alarm: d.high, low_alarm: d.low };
+  ["high_alarm", "high_warn", "low_warn", "low_alarm"].forEach((k, i) => {
+    ds[3 + i].data = slots.map(() => th[k] ?? null);
+  });
   humChart.data.datasets[0].data = pick("hum");
   tempChart.update();
   humChart.update();

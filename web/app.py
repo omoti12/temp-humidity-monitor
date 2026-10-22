@@ -14,6 +14,7 @@
 #   /api/data?day=日付 … その日の10分ごとのデータと最新値（JSON）
 #   /api/now          … 現在値（JSON）。ログイン不要
 #   /api/recipients   … 警報メールの宛先の表示・追加・削除（管理用パスワードが必要）
+#   /api/settings     … 警報の設定（2段階の温度の基準など）の表示・変更（管理用パスワードが必要）
 #   /download?day=日付 … その日のCSVをダウンロード
 #
 # 動かし方
@@ -25,6 +26,7 @@ import hmac
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -34,14 +36,13 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 # 1つ上のフォルダにある alert_mail.py（警報メールの設定・宛先・送信）を使えるようにする
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import alarm_settings  # noqa: E402
 import alert_mail  # noqa: E402
 
 # ---- 設定値（環境変数で上書きできる。temp-web.service の Environment= で設定）----
 LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
 NOW_PATH = os.environ.get("NOW_PATH", "/dev/shm/temp-monitor/now.json")   # sht31_logger.py と同じ場所
 STEP_MIN = 10          # グラフの間隔（分）
-TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
-TEMP_LOW = 21.0
 
 # ログイン用。環境変数 WEB_USER / WEB_PASSWORD で設定する（未設定ならログインなし）
 WEB_USER = os.environ.get("WEB_USER", "")
@@ -56,7 +57,7 @@ def require_login():
     # どのページを開くときも、最初にここを通る（パスワードの確認）
     # 現在値だけは公開サイト（GitHub Pages）から読めるようにログイン不要にする
     # 宛先の管理（/api/recipients）は、下の check_admin() で別の管理用パスワードを確認する
-    if not WEB_PASSWORD or request.path in ("/api/now", "/api/recipients"):
+    if not WEB_PASSWORD or request.path in ("/api/now", "/api/recipients", "/api/settings"):
         return None
     # ブラウザが送ってきたユーザー名・パスワードを確認する
     # （hmac.compare_digest は、比べる時間から中身を推測されにくい比べ方）
@@ -118,11 +119,7 @@ def every_10min(rows):
 
 def status(t):
     # 状態の判定（CSVに状態が書かれていない古い記録のときだけ使う）
-    if t >= TEMP_HIGH:
-        return "高温"
-    if t <= TEMP_LOW:
-        return "低温"
-    return "正常"
+    return alarm_settings.status(t)
 
 
 def parse_day(s):
@@ -167,8 +164,8 @@ def api_data():
         "day": day.strftime("%Y-%m-%d"),
         "points": every_10min(rows),
         "latest": latest_reading(rows, day),
-        "high": TEMP_HIGH,
-        "low": TEMP_LOW,
+        # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報）
+        "thresholds": alarm_settings.thresholds(),
     })
 
 
@@ -205,6 +202,9 @@ def api_now():
 # 警報メールの宛先の管理（公開サイトの「警報メールの宛先」画面から使う）
 # ============================================================
 
+# 設定を変えたときに、公開サイトをすぐ更新するためのスクリプト
+PUBLISH_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pages", "publish.py")
+
 # 宛先の画面を置いているサイト。ほかのサイトからは使えないようにする
 ADMIN_ORIGIN = "https://omoti12.github.io"
 MAX_RECIPIENTS = 20         # 宛先の上限（いたずらで大量に登録されないように）
@@ -220,7 +220,7 @@ FAIL_LIMIT, FAIL_WINDOW = 10, 600
 def admin_cors(resp):
     # 公開サイト（ADMIN_ORIGIN）のページからだけ、この窓口を使えるようにする
     resp.headers["Access-Control-Allow-Origin"] = ADMIN_ORIGIN
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
     resp.headers["Vary"] = "Origin"
     resp.headers["Cache-Control"] = "no-store"
@@ -306,6 +306,32 @@ def api_recipients():
         return admin_error(str(e), 400)
     print(f"警報メールの宛先を削除: {email}", flush=True)
     return admin_cors(jsonify({"recipients": lst}))
+
+
+@app.route("/api/settings", methods=["GET", "PUT", "OPTIONS"])
+def api_settings():
+    # 警報の設定（2段階の温度の基準・回復の幅・再通知の間隔・注意でもメールを送るか）
+    if request.method == "OPTIONS":
+        return admin_cors(Response(status=204))
+    err = check_admin()
+    if err:
+        return err
+    # 表示: 今の設定を返す
+    if request.method == "GET":
+        return admin_cors(jsonify({"settings": alarm_settings.load()}))
+    # 変更: 確かめてから保存する（おかしな値なら理由を返す）
+    try:
+        s = alarm_settings.save(request.get_json(silent=True) or {})
+    except ValueError as e:
+        return admin_error(str(e), 400)
+    print(f"警報の設定を変更: {s}", flush=True)
+    # 公開サイトのグラフの線もすぐ変わるよう、裏で公開を1回実行する（終わるのは待たない）
+    try:
+        subprocess.Popen([sys.executable, PUBLISH_SCRIPT],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass    # 失敗しても、10分ごとの自動の公開で反映される
+    return admin_cors(jsonify({"settings": s}))
 
 
 @app.route("/download")

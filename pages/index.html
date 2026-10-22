@@ -25,12 +25,14 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
+    --hot-warn: #b08800; --cold-warn: #9775fa;
   }
   /* スマホやPCがダークモードのときの色 */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
+      --hot-warn: #fcc419; --cold-warn: #d0bfff;
     }
   }
   /* ---- 全体のレイアウト ---- */
@@ -48,8 +50,11 @@
   .value { font-size: 2.4rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .value small { font-size: 1rem; font-weight: 400; margin-left: 2px; }
   #temp { color: var(--temp); } #hum { color: var(--hum); }
-  /* 状態の文字の色（正常=緑、高温=オレンジ、低温=紫） */
-  #status.正常 { color: var(--ok); } #status.高温 { color: var(--warn); } #status.低温 { color: var(--out); }
+  /* 状態の文字の色（正常=緑、高温注意=黄、高温警報=オレンジ、低温注意=薄紫、低温警報=紫） */
+  /* 「高温」「低温」は前の版で記録した状態の名前（警報と同じ色にする） */
+  #status.正常 { color: var(--ok); }
+  #status.高温注意 { color: var(--hot-warn); } #status.高温警報, #status.高温 { color: var(--warn); }
+  #status.低温注意 { color: var(--cold-warn); } #status.低温警報, #status.低温 { color: var(--out); }
   .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
   /* ---- 日付を選ぶボタンの並び ---- */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -73,6 +78,12 @@
               padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
   .admin .msg { font-size: .9rem; margin: 10px 0 0; min-height: 1.2em; }
   .admin .msg.error { color: var(--warn); }
+  .admin .sub { font-size: 1rem; margin: 20px 0 4px; }
+  .admin .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin-top: 8px; }
+  .admin .grid label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+  .admin .grid input { flex: none; width: 100%; color: var(--text); }
+  .admin .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: .9rem; }
+  .admin .check input { flex: none; width: auto; }
   /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
   @media (max-width: 600px) {
     .now { grid-template-columns: 1fr 1fr; }
@@ -118,14 +129,33 @@
   </div>
   <div class="empty" id="empty" hidden>この日の記録はありません</div>
 
-  <!-- 警報メールの宛先の管理（押すと開く。管理用パスワードが必要） -->
+  <!-- 管理（警報の設定・警報メールの宛先）。押すと開く。管理用パスワードが必要 -->
   <details class="card admin">
-    <summary>警報メールの宛先（管理）</summary>
-    <div class="label" style="margin-top:8px">表示・追加・削除には管理用パスワードが必要です</div>
+    <summary>管理（警報の設定・メールの宛先）</summary>
+    <div class="label" style="margin-top:8px">表示・変更には管理用パスワードが必要です</div>
     <form class="row" id="pwForm">
       <input type="password" id="pw" placeholder="管理用パスワード" autocomplete="current-password">
       <button type="submit">表示</button>
     </form>
+
+    <!-- 警報の設定（パスワードが正しいと表示される） -->
+    <form id="settingsForm" hidden>
+      <h3 class="sub">警報の設定</h3>
+      <div class="grid">
+        <label>高温警報（℃以上）<input type="number" step="0.1" id="s_high_alarm" required></label>
+        <label>高温注意（℃以上）<input type="number" step="0.1" id="s_high_warn" required></label>
+        <label>低温注意（℃以下）<input type="number" step="0.1" id="s_low_warn" required></label>
+        <label>低温警報（℃以下）<input type="number" step="0.1" id="s_low_alarm" required></label>
+        <label>回復の幅（℃）<input type="number" step="0.1" min="0" max="5" id="s_hysteresis" required></label>
+        <label>再通知の間隔（分。0で再通知しない）<input type="number" step="1" min="0" max="1440" id="s_remind_min" required></label>
+      </div>
+      <label class="check"><input type="checkbox" id="s_mail_on_warn">「注意」でもメールを送る（オフなら「警報」だけ送る）</label>
+      <div class="row"><button type="submit">設定を保存</button></div>
+      <p class="msg" id="settingsMsg"></p>
+    </form>
+
+    <!-- 警報メールの宛先（パスワードが正しいと表示される） -->
+    <h3 class="sub" id="rcptsTitle" hidden>警報メールの宛先</h3>
     <ul id="rcpts"></ul>
     <form class="row" id="addForm" hidden>
       <input type="email" id="newEmail" placeholder="追加するメールアドレス" autocomplete="off">
@@ -189,9 +219,11 @@ function buildCharts() {
       { label: "_min", data: [], borderWidth: 0, pointRadius: 0, fill: false },
       // [2] 温度の平均
       { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 2, borderWidth: 2 },
-      // [3] [4] 警報の基準の点線
-      { label: "高温", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
-      { label: "低温", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      // [3]〜[6] 警報（破線）と注意（点線）の基準
+      { label: "高温警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高温注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温注意", data: [], borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温警報", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
     ] },
     options: lineOpts("℃"),
   });
@@ -265,8 +297,11 @@ async function load() {
   ds[0].data = pick("temp_max");
   ds[1].data = pick("temp_min");
   ds[2].data = pick("temp");
-  ds[3].data = slots.map(() => d.high);
-  ds[4].data = slots.map(() => d.low);
+  // 基準の線（古いデータで thresholds がないときは、前の版の high / low を警報の線として使う）
+  const th = d.thresholds || { high_alarm: d.high, low_alarm: d.low };
+  ["high_alarm", "high_warn", "low_warn", "low_alarm"].forEach((k, i) => {
+    ds[3 + i].data = slots.map(() => th[k] ?? null);
+  });
   humChart.data.datasets[0].data = pick("hum");
   tempChart.update();
   humChart.update();
@@ -293,12 +328,15 @@ $("today").onclick = () => { day = fmt(new Date()); load(); };
 $("day").onchange = (e) => { if (e.target.value) { day = e.target.value; load(); } };
 
 // ============================================================
-// 警報メールの宛先の管理
-//   ラズパイの窓口 /api/recipients に、管理用パスワードを付けて頼む
+// 管理（警報の設定・警報メールの宛先）
+//   ラズパイの窓口 /api/settings・/api/recipients に、管理用パスワードを付けて頼む
 //   パスワードはこのページを開いている間だけ覚えておく（保存はしない）
 // ============================================================
 const ADMIN_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/recipients") : "";
+const SETTINGS_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/settings") : "";
 let adminPw = "";
+// 警報の設定の項目（画面の入力欄の id は "s_" + 名前）
+const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min"];
 
 // メッセージを表示する（isError が true なら注意の色）
 function adminMsg(text, isError) {
@@ -306,15 +344,16 @@ function adminMsg(text, isError) {
   $("adminMsg").className = "msg" + (isError ? " error" : "");
 }
 
-// ラズパイの窓口を呼ぶ。method は "GET"（表示）"POST"（追加）"DELETE"（削除）
-async function adminCall(method, email) {
-  if (!ADMIN_URL) throw new Error("ラズパイの窓口が設定されていません");
+// ラズパイの窓口を呼ぶ。method は "GET"（表示）"POST"（追加）"PUT"（変更）"DELETE"（削除）
+// data は送る内容、url は窓口（省略すると宛先の窓口）
+async function adminCall(method, data, url = ADMIN_URL) {
+  if (!url) throw new Error("ラズパイの窓口が設定されていません");
   let res;
   try {
-    res = await fetch(ADMIN_URL, {
+    res = await fetch(url, {
       method, cache: "no-store",
       headers: { "Authorization": `Bearer ${adminPw}`, "Content-Type": "application/json" },
-      body: email ? JSON.stringify({ email }) : undefined,
+      body: data ? JSON.stringify(data) : undefined,
     });
   } catch (e) {
     throw new Error("ラズパイにつながりません。電源とネットを確認してください");
@@ -337,7 +376,7 @@ function renderRecipients(list) {
     btn.onclick = async () => {
       if (!confirm(`${email} を宛先から削除しますか？`)) return;
       try {
-        renderRecipients((await adminCall("DELETE", email)).recipients);
+        renderRecipients((await adminCall("DELETE", { email })).recipients);
         adminMsg(`${email} を削除しました`);
       } catch (e) { adminMsg(e.message, true); }
     };
@@ -345,21 +384,52 @@ function renderRecipients(list) {
     ul.append(li);
   }
   $("addForm").hidden = false;
+  $("rcptsTitle").hidden = false;
 }
 
-// 「表示」: パスワードを確かめて、一覧を出す
+// 警報の設定を入力欄に入れる
+function renderSettings(st) {
+  for (const k of SETTING_KEYS) $("s_" + k).value = st[k];
+  $("s_mail_on_warn").checked = !!st.mail_on_warn;
+  $("settingsForm").hidden = false;
+}
+
+// 設定のメッセージを表示する（isError が true なら注意の色）
+function settingsMsg(text, isError) {
+  $("settingsMsg").textContent = text;
+  $("settingsMsg").className = "msg" + (isError ? " error" : "");
+}
+
+// 「表示」: パスワードを確かめて、警報の設定と宛先の一覧を出す
 $("pwForm").onsubmit = async (e) => {
   e.preventDefault();
   adminPw = $("pw").value;
   adminMsg("確認中...");
   try {
     renderRecipients((await adminCall("GET")).recipients);
+    renderSettings((await adminCall("GET", null, SETTINGS_URL)).settings);
     adminMsg("");
+    settingsMsg("");
   } catch (err) {
     $("rcpts").replaceChildren();
     $("addForm").hidden = true;
+    $("rcptsTitle").hidden = true;
+    $("settingsForm").hidden = true;
     adminMsg(err.message, true);
   }
+};
+
+// 「設定を保存」: 入力した設定をラズパイに保存する
+$("settingsForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const data = { mail_on_warn: $("s_mail_on_warn").checked };
+  for (const k of SETTING_KEYS) data[k] = Number($("s_" + k).value);
+  settingsMsg("保存中...");
+  try {
+    renderSettings((await adminCall("PUT", data, SETTINGS_URL)).settings);
+    settingsMsg("保存しました。警報の判定にはすぐ反映され、グラフの線は1〜2分で変わります");
+    setTimeout(load, 90 * 1000);   // 公開サイトの更新を待ってからグラフを読み直す
+  } catch (err) { settingsMsg(err.message, true); }
 };
 
 // 「追加」: 入力したアドレスを宛先に加える（追加したアドレスにはお知らせメールが届く）
@@ -369,7 +439,7 @@ $("addForm").onsubmit = async (e) => {
   if (!email) return;
   adminMsg("追加中...");
   try {
-    const d = await adminCall("POST", email);
+    const d = await adminCall("POST", { email });
     renderRecipients(d.recipients);
     $("newEmail").value = "";
     adminMsg(d.notified ? `${email} を追加し、お知らせメールを送りました`

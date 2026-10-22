@@ -26,6 +26,7 @@ from datetime import datetime   # 日付・時刻
 
 from smbus2 import SMBus, i2c_msg   # I2C通信でセンサーとやり取りする
 
+import alarm_settings           # 警報の設定（2段階の温度の基準など）と状態の判定（alarm_settings.py）
 import alert_mail               # 警報メールの設定・宛先・送信（alert_mail.py）
 
 # ============================================================
@@ -42,11 +43,9 @@ LOG_DIR = "/home/iot-user/templog"
 # 現在値はメモリ上（/dev/shm）に置く。5秒ごとの上書きでSDカードを消耗させないため。再起動で消えてよい
 NOW_PATH = "/dev/shm/temp-monitor/now.json"
 
-# 警報の基準。変えるときは sht31_graph.py・web/app.py・pages/publish.py も同じ値にする
-TEMP_HIGH = 30.0       # この温度以上で「高温」警報
-TEMP_LOW = 21.0        # この温度以下で「低温」警報
-HYSTERESIS = 0.5       # 正常に戻ったと判断する幅（30℃なら29.5℃以下で回復）
-REMIND_MIN = 60        # 異常が続くとき、この間隔（分）で再通知する。0なら再通知しない
+# 警報の設定（高温警報・高温注意・低温注意・低温警報の温度、回復の幅、再通知の間隔など）は
+# alarm_settings.py が /home/iot-user/.config/temp-monitor/settings.json から読む。
+# サイトの「警報の設定」画面で変えられ、1分ごとに読み直すので再起動は不要
 
 # メールの設定（送信元・パスワード）と宛先は alert_mail.py が送るたびに読む
 #   送信元・パスワード : /home/iot-user/.config/temp-monitor/mail.env
@@ -87,22 +86,18 @@ def read_sht31(bus):
 
 
 # ============================================================
-# 状態の判定（正常 / 高温 / 低温）
+# 状態の判定（正常 / 高温注意 / 高温警報 / 低温注意 / 低温警報）
 # ============================================================
 
-def status(t, prev="正常"):
-    # t: 今の温度、prev: 前回の状態。戻り値は "正常" "高温" "低温" のどれか
-    t = round(t, 1)     # 表示・記録と同じ小数第1位の値で判定する（29.97℃が「30.0℃ 正常」と見えないように）
-    if t >= TEMP_HIGH:
-        return "高温"
-    if t <= TEMP_LOW:
-        return "低温"
-    # 境目でメールが連発しないよう、少し戻るまでは異常のままにする
-    if prev == "高温" and t > TEMP_HIGH - HYSTERESIS:
-        return "高温"
-    if prev == "低温" and t < TEMP_LOW + HYSTERESIS:
-        return "低温"
-    return "正常"
+def status(t, prev="正常", s=None):
+    # t: 今の温度、prev: 前回の状態。判定のしかたは alarm_settings.py の status() を参照
+    return alarm_settings.status(t, prev, s)
+
+
+def settings_text(s):
+    # メールの本文に入れる、今の設定の説明
+    return (f"設定: 高温警報 {s['high_alarm']:g}℃以上 / 高温注意 {s['high_warn']:g}℃以上 / "
+            f"低温注意 {s['low_warn']:g}℃以下 / 低温警報 {s['low_alarm']:g}℃以下")
 
 
 # ============================================================
@@ -121,32 +116,42 @@ class Alarm:
         self.notified = "正常"   # 最後にメールで知らせた状態
         self.last_sent = 0.0    # 最後にメールを送った時刻（再通知の判断に使う）
 
-    def check(self, now, t, h, st):
+    def check(self, now, t, h, st, s=None):
         # 1分ごとに呼ばれる。送る必要があるときだけメールを送る
-        # 異常が続いていて、前回の送信から REMIND_MIN 分たったら再通知する
-        remind = (st != "正常" and REMIND_MIN > 0
-                  and time.time() - self.last_sent >= REMIND_MIN * 60)
+        s = s or alarm_settings.load()
+        # 「注意でもメールを送る」がオフのときは、注意の段階はメールの上では「正常」と同じに扱う
+        level = st if (s["mail_on_warn"] or "注意" not in st) else "正常"
+        # 警報・注意が続いていて、前回の送信から remind_min 分たったら再通知する
+        remind = (level != "正常" and s["remind_min"] > 0
+                  and time.time() - self.last_sent >= s["remind_min"] * 60)
         # 状態が前回知らせたときと同じで、再通知の時期でもなければ何もしない
-        if st == self.notified and not remind:
+        if level == self.notified and not remind:
             return
         # 状態に合わせて件名を作る
-        if st == "高温":
-            subject = f"【高温警報】温度 {t:.1f}℃（{TEMP_HIGH:g}℃以上）"
-        elif st == "低温":
-            subject = f"【低温警報】温度 {t:.1f}℃（{TEMP_LOW:g}℃以下）"
-        else:
+        if level == "高温警報":
+            subject = f"【高温警報】温度 {t:.1f}℃（{s['high_alarm']:g}℃以上）"
+        elif level == "高温注意":
+            subject = f"【高温注意】温度 {t:.1f}℃（{s['high_warn']:g}℃以上）"
+        elif level == "低温注意":
+            subject = f"【低温注意】温度 {t:.1f}℃（{s['low_warn']:g}℃以下）"
+        elif level == "低温警報":
+            subject = f"【低温警報】温度 {t:.1f}℃（{s['low_alarm']:g}℃以下）"
+        elif st == "正常":
             subject = f"【回復】温度 {t:.1f}℃ 正常に戻りました"
-        if st == self.notified:
+        else:
+            # 注意のメールを送らない設定で、警報から注意に下がったとき
+            subject = f"【回復】温度 {t:.1f}℃ 警報が解除されました（現在: {st}）"
+        if level == self.notified:
             subject = "【継続】" + subject      # 再通知のときは【継続】を付ける
         body = (f"日時: {now:%Y-%m-%d %H:%M}\n温度: {t:.1f}℃\n湿度: {h:.1f}%\n"
-                f"状態: {st}\n\n設定: {TEMP_LOW:g}℃以下で低温、{TEMP_HIGH:g}℃以上で高温")
+                f"状態: {st}\n\n{settings_text(s)}")
         try:
             if send_mail(subject, body):
                 print(f"メール送信: {subject}", flush=True)
             else:
                 print(f"メール設定がないため送信しません: {subject}", flush=True)
             # 送れたら「知らせた状態」を更新する
-            self.notified = st
+            self.notified = level
             self.last_sent = time.time()
         except Exception as e:
             # 送れなかったら notified を更新しない → 次の測定（1分後）でもう一度送る
@@ -189,6 +194,7 @@ def write_now(now, t, h, st):
 def main():
     alarm = Alarm()
     st = "正常"             # 今の状態（1分ごとに更新）
+    s = alarm_settings.load()   # 警報の設定（1分ごとに読み直す）
     last_logged = None      # 最後にCSVへ記録した区切りの時刻
     # I2Cのバス1番（ラズパイのGPIO2=SDA、GPIO3=SCL）を開く
     with SMBus(1) as bus:
@@ -199,14 +205,15 @@ def main():
             try:
                 t, h = read_sht31(bus)
                 if slot != last_logged:         # 毎分1回：記録と警報判定
-                    st = status(t, st)
+                    s = alarm_settings.load()   # 設定を読み直す（画面で変えた設定がここで反映される）
+                    st = status(t, st, s)
                     append_csv(now, t, h, st)
                     last_logged = slot
                     # print の内容は動作ログに残る（journalctl -u sht31-logger で見られる）
                     print(f"{now:%H:%M:%S}  温度 {t:.1f}℃  湿度 {h:.1f}%  {st}", flush=True)
-                    alarm.check(now, t, h, st)
+                    alarm.check(now, t, h, st, s)
                 # 現在値は毎回（5秒ごと）書く
-                write_now(now, t, h, status(t, st))
+                write_now(now, t, h, status(t, st, s))
             except Exception as e:
                 # センサーの読み取りなどに失敗しても止まらず、次の測定で続ける
                 print(f"{now:%H:%M:%S}  読み取り失敗: {e}", flush=True)
@@ -232,7 +239,7 @@ def test_mail():
     print(f"送信元: {user}\n宛先: {', '.join(to)}\n送信中...")
     try:
         send_mail("【テスト】温湿度モニター", f"警報メールのテストです。\n日時: {datetime.now():%Y-%m-%d %H:%M}\n\n"
-                  f"設定: {TEMP_LOW:g}℃以下で低温、{TEMP_HIGH:g}℃以上で高温")
+                  f"{settings_text(alarm_settings.load())}")
     except smtplib.SMTPAuthenticationError:
         sys.exit("送信に失敗しました: ログインできません。MAIL_USER とアプリパスワードを確認してください")
     except Exception as e:

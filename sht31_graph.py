@@ -28,9 +28,8 @@ LOG_DIR = "/home/iot-user/templog"     # 記録（CSV）があるフォルダ
 OUT_PATH = "/dev/shm/temp-monitor/graph.png"
 STEP_MIN = 10          # グラフの間隔（分）
 
-# グラフに引く警報の線
-TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
-TEMP_LOW = 21.0
+# グラフに引く警報・注意の線は、警報の設定（alarm_settings.py）から読む
+import alarm_settings
 
 from matplotlib import font_manager
 
@@ -75,9 +74,12 @@ def draw(times, temps, hums, day):
 
     # ---- 上段: 温度 ----
     ax1.plot(times, temps, marker="o", markersize=3, color="tab:red")
-    # 警報の基準を点線で引く
-    ax1.axhline(TEMP_HIGH, color="orange", linestyle="--", label=f"高温 {TEMP_HIGH:g}℃")
-    ax1.axhline(TEMP_LOW, color="purple", linestyle="--", label=f"低温 {TEMP_LOW:g}℃")
+    # 警報（破線）と注意（点線）の基準を引く
+    th = alarm_settings.thresholds()
+    ax1.axhline(th["high_alarm"], color="red", linestyle="--", label=f"高温警報 {th['high_alarm']:g}℃")
+    ax1.axhline(th["high_warn"], color="orange", linestyle=":", label=f"高温注意 {th['high_warn']:g}℃")
+    ax1.axhline(th["low_warn"], color="mediumpurple", linestyle=":", label=f"低温注意 {th['low_warn']:g}℃")
+    ax1.axhline(th["low_alarm"], color="purple", linestyle="--", label=f"低温警報 {th['low_alarm']:g}℃")
     ax1.set_ylabel("温度 (℃)")
     ax1.legend(loc="upper left")
     ax1.grid(alpha=0.3)

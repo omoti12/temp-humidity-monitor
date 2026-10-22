@@ -32,6 +32,10 @@ import subprocess
 import sys
 from datetime import datetime
 
+# 1つ上のフォルダにある alarm_settings.py（警報の設定）を使えるようにする
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import alarm_settings  # noqa: E402
+
 # ---- 設定値（環境変数で上書きできる）----
 # このリポジトリのフォルダ（このファイルの1つ上の階層）
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,8 +47,6 @@ BRANCH = "gh-pages"    # GitHub Pages が公開するブランチ
 # 同時に2つ動かないようにするための鍵ファイル（メモリ上に置く）
 RUN_LOCK = os.environ.get("PUBLISH_LOCK", "/dev/shm/temp-monitor/publish.lock")
 STEP_MIN = 10          # グラフの間隔（分）
-TEMP_HIGH = 30.0       # sht31_logger.py と同じ値にする
-TEMP_LOW = 21.0
 
 SITE_FILES = {         # 公開するファイル: 公開先の名前 → このリポジトリ内の元ファイル
     "index.html": "pages/index.html",
@@ -139,8 +141,8 @@ def build():
         "updated": datetime.now().astimezone().isoformat(),
         "latest": latest,
         "days": days,
-        "high": TEMP_HIGH,
-        "low": TEMP_LOW,
+        # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報）
+        "thresholds": alarm_settings.thresholds(),
     })
 
 
