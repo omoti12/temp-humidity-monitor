@@ -215,14 +215,21 @@ sudo systemctl restart systemd-journald
 
 ラズパイ全体が固まったときに自動で再起動する（ウォッチドッグ）：
 
+Raspberry Pi OS では最初から有効になっている（固まってから1分で再起動）。確認だけでよい。
+
+```
+systemctl show -p RuntimeWatchdogUSec    # 0 以外（例: 1min）なら有効
+```
+
+`0` と出たとき（無効のとき）だけ、次で有効にする（15秒で再起動する設定）：
+
 ```
 sudo mkdir -p /etc/systemd/system.conf.d
 sudo cp ~/temp-monitor/systemd/watchdog.conf /etc/systemd/system.conf.d/
 sudo systemctl daemon-reexec
-systemctl show -p RuntimeWatchdogUSec    # RuntimeWatchdogUSec=15s と出れば有効
 ```
 
-固まってから約15秒で再起動し、記録などは自動で再開する。ただし「重いけれど動いている」「ネットだけ切れている」ときは再起動しない。
+再起動すると記録などは自動で再開する。ただし「重いけれど動いている」「ネットだけ切れている」ときは再起動しない。
 
 電源アダプタはラズパイ5用の 5V 5A（27W）を使う。力不足だと負荷がかかったときに止まる
 （`vcgencmd get_throttled` が `throttled=0x0` 以外なら電圧不足が起きている）。
