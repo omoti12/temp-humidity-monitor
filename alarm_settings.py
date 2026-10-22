@@ -1,10 +1,11 @@
-"""警報の設定（2段階の温度の基準など）と、状態の判定をまとめた部品。"""
+"""警報の設定（2段階の温度・湿度の基準など）と、状態の判定をまとめた部品。"""
 # ============================================================
 # このファイルの役割
 #   ・警報の設定を読み書きする（~/.config/temp-monitor/settings.json）
 #       サイトの「警報の設定」画面から変更すると、このファイルが書き換わる
 #       ファイルがなければ DEFAULTS（初期値）を使う
 #   ・温度から状態（正常 / 高温注意 / 高温警報 / 低温注意 / 低温警報）を判定する
+#   ・湿度から状態（正常 / 高湿注意 / 高湿警報）を判定する（湿度は上限だけ）
 #
 # 使っているところ
 #   sht31_logger.py（警報の判定とメール）、sht31_graph.py・web/app.py・pages/publish.py（グラフの線）
@@ -25,8 +26,16 @@ DEFAULTS = {
     "low_alarm": 21.0,      # この温度以下で「低温警報」
     "hysteresis": 0.5,      # 回復と判断する幅（30℃の警報なら29.5℃以下に下がったら解除）
     "remind_min": 60,       # 警報・注意が続くとき、この間隔（分）で再通知する。0なら再通知しない
-    "mail_on_warn": True,   # 「注意」でもメールを送るか（False なら「警報」だけ送る）
+    "mail_on_warn": True,   # 「注意」でもメールを送るか（False なら「警報」だけ送る。温度・湿度共通）
+    "hum_enabled": True,    # 湿度の警報を使うか
+    "hum_alarm": 70.0,      # この湿度以上で「高湿警報」
+    "hum_warn": 65.0,       # この湿度以上で「高湿注意」
+    "hum_hysteresis": 2.0,  # 湿度の回復と判断する幅（70%の警報なら68%以下に下がったら解除）
 }
+
+# 湿度の状態の名前（数字が大きいほど高い）
+HUM_LEVELS = {0: "正常", 1: "高湿注意", 2: "高湿警報"}
+HUM_LEVEL_OF = {name: k for k, name in HUM_LEVELS.items()}
 
 # 状態の名前。数字は「どれくらい外れているか」（マイナスが低温、プラスが高温）
 LEVELS = {-2: "低温警報", -1: "低温注意", 0: "正常", 1: "高温注意", 2: "高温警報"}
@@ -53,13 +62,15 @@ def validate(new):
     """画面から送られた設定を確かめて、正しい形に直して返す。おかしければ ValueError を出す"""
     s = load()
     try:
-        for k in ("high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis"):
+        for k in ("high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis",
+                  "hum_alarm", "hum_warn", "hum_hysteresis"):
             if k in new:
                 s[k] = round(float(new[k]), 1)
         if "remind_min" in new:
             s["remind_min"] = int(new["remind_min"])
-        if "mail_on_warn" in new:
-            s["mail_on_warn"] = bool(new["mail_on_warn"])
+        for k in ("mail_on_warn", "hum_enabled"):
+            if k in new:
+                s[k] = bool(new[k])
     except (TypeError, ValueError):
         raise ValueError("数字で入力してください")
     # センサー（SHT31）が測れる範囲は -40〜125℃
@@ -77,6 +88,14 @@ def validate(new):
         raise ValueError("回復の幅は 0〜5℃ で入力してください")
     if not 0 <= s["remind_min"] <= 1440:
         raise ValueError("再通知の間隔は 0〜1440分 で入力してください")
+    # 湿度（0〜100%）。注意と警報を同じにすると「注意の段階なし」
+    for k in ("hum_alarm", "hum_warn"):
+        if not 0 <= s[k] <= 100:
+            raise ValueError("湿度は 0〜100% の範囲で入力してください")
+    if s["hum_warn"] > s["hum_alarm"]:
+        raise ValueError("湿度注意は、湿度警報と同じか低い値にしてください（同じにすると湿度注意なし）")
+    if not 0 <= s["hum_hysteresis"] <= 10:
+        raise ValueError("湿度の回復の幅は 0〜10% で入力してください")
     return s
 
 
@@ -130,7 +149,29 @@ def status(t, prev="正常", s=None):
     return LEVELS[raw]
 
 
-def thresholds(s=None):
-    """グラフに線を引くための4つの基準"""
+def hum_status(h, prev="正常", s=None):
+    """湿度 h と前回の状態 prev から、湿度の状態（正常 / 高湿注意 / 高湿警報）を判定する。
+    湿度の警報を使わない設定なら、いつも「正常」"""
     s = s or load()
-    return {k: s[k] for k in ("high_alarm", "high_warn", "low_warn", "low_alarm")}
+    if not s["hum_enabled"]:
+        return "正常"
+    h = round(h, 1)     # 表示・記録と同じ小数第1位の値で判定する
+    raw = 2 if h >= s["hum_alarm"] else 1 if h >= s["hum_warn"] else 0
+    p = HUM_LEVEL_OF.get(prev, 0)
+    # 下がってきたとき: 基準より hum_hysteresis 以上下がるまでは前の段階を保つ
+    if raw < p:
+        for k in range(p, raw, -1):
+            if k == 1 and s["hum_warn"] == s["hum_alarm"]:
+                continue    # 注意と警報が同じ値なら「注意の段階なし」
+            if h > s["hum_alarm" if k == 2 else "hum_warn"] - s["hum_hysteresis"]:
+                return HUM_LEVELS[k]
+    return HUM_LEVELS[raw]
+
+
+def thresholds(s=None):
+    """グラフに線を引くための基準（温度4つ、湿度は使う設定のときだけ2つ）"""
+    s = s or load()
+    th = {k: s[k] for k in ("high_alarm", "high_warn", "low_warn", "low_alarm")}
+    if s["hum_enabled"]:
+        th.update(hum_alarm=s["hum_alarm"], hum_warn=s["hum_warn"])
+    return th

@@ -86,7 +86,9 @@ def read_sht31(bus):
 
 
 # ============================================================
-# 状態の判定（正常 / 高温注意 / 高温警報 / 低温注意 / 低温警報）
+# 状態の判定
+#   温度: 正常 / 高温注意 / 高温警報 / 低温注意 / 低温警報
+#   湿度: 正常 / 高湿注意 / 高湿警報（alarm_settings.hum_status()）
 # ============================================================
 
 def status(t, prev="正常", s=None):
@@ -96,8 +98,11 @@ def status(t, prev="正常", s=None):
 
 def settings_text(s):
     # メールの本文に入れる、今の設定の説明
-    return (f"設定: 高温警報 {s['high_alarm']:g}℃以上 / 高温注意 {s['high_warn']:g}℃以上 / "
+    text = (f"設定: 高温警報 {s['high_alarm']:g}℃以上 / 高温注意 {s['high_warn']:g}℃以上 / "
             f"低温注意 {s['low_warn']:g}℃以下 / 低温警報 {s['low_alarm']:g}℃以下")
+    if s["hum_enabled"]:
+        text += f"\n      高湿警報 {s['hum_alarm']:g}%以上 / 高湿注意 {s['hum_warn']:g}%以上"
+    return text
 
 
 # ============================================================
@@ -110,9 +115,11 @@ def send_mail(subject, body):
 
 
 class Alarm:
-    """状態が変わったとき（と異常が続くとき）にメールを送る。送信に失敗したら次の測定で再送する。"""
+    """状態が変わったとき（と異常が続くとき）にメールを送る。送信に失敗したら次の測定で再送する。
+    温度用（kind="temp"）と湿度用（kind="hum"）を別々に作り、それぞれ別に知らせる"""
 
-    def __init__(self):
+    def __init__(self, kind="temp"):
+        self.kind = kind
         self.notified = "正常"   # 最後にメールで知らせた状態
         self.last_sent = 0.0    # 最後にメールを送った時刻（再通知の判断に使う）
 
@@ -128,7 +135,9 @@ class Alarm:
         if level == self.notified and not remind:
             return
         # 状態に合わせて件名を作る
-        if level == "高温警報":
+        if self.kind == "hum":
+            subject = self.hum_subject(level, st, h, s)
+        elif level == "高温警報":
             subject = f"【高温警報】温度 {t:.1f}℃（{s['high_alarm']:g}℃以上）"
         elif level == "高温注意":
             subject = f"【高温注意】温度 {t:.1f}℃（{s['high_warn']:g}℃以上）"
@@ -143,6 +152,8 @@ class Alarm:
             subject = f"【回復】温度 {t:.1f}℃ 警報が解除されました（現在: {st}）"
         if level == self.notified:
             subject = "【継続】" + subject      # 再通知のときは【継続】を付ける
+        if self.kind == "hum":
+            st = f"湿度 {st}"                  # 本文の「状態」に、湿度の状態だと分かるように書く
         body = (f"日時: {now:%Y-%m-%d %H:%M}\n温度: {t:.1f}℃\n湿度: {h:.1f}%\n"
                 f"状態: {st}\n\n{settings_text(s)}")
         try:
@@ -157,6 +168,17 @@ class Alarm:
             # 送れなかったら notified を更新しない → 次の測定（1分後）でもう一度送る
             # エラー文に宛先が含まれることがあるので、アドレスは伏せ字にしてログに残す
             print(f"メール送信失敗（次の測定で再送）: {alert_mail.mask(e)}", flush=True)
+
+    @staticmethod
+    def hum_subject(level, st, h, s):
+        # 湿度のメールの件名
+        if level == "高湿警報":
+            return f"【高湿警報】湿度 {h:.1f}%（{s['hum_alarm']:g}%以上）"
+        if level == "高湿注意":
+            return f"【高湿注意】湿度 {h:.1f}%（{s['hum_warn']:g}%以上）"
+        if st == "正常":
+            return f"【回復】湿度 {h:.1f}% 正常に戻りました"
+        return f"【回復】湿度 {h:.1f}% 警報が解除されました（現在: {st}）"
 
 
 # ============================================================
@@ -177,14 +199,16 @@ def append_csv(now, t, h, st):
         w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), f"{t:.1f}", f"{h:.1f}", st])
 
 
-def write_now(now, t, h, st):
-    """現在値を now.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する。"""
+def write_now(now, t, h, st, hst="正常"):
+    """現在値を now.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する。
+    st は温度の状態、hst は湿度の状態"""
     path = NOW_PATH
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # いったん .tmp に書いてから、本物と入れ替える
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump({"iso": now.astimezone().isoformat(timespec="seconds"),
-                   "temp": round(t, 1), "hum": round(h, 1), "status": st}, f, ensure_ascii=False)
+                   "temp": round(t, 1), "hum": round(h, 1), "status": st, "hum_status": hst},
+                  f, ensure_ascii=False)
     os.replace(path + ".tmp", path)
 
 
@@ -193,8 +217,10 @@ def write_now(now, t, h, st):
 # ============================================================
 
 def main():
-    alarm = Alarm()
-    st = "正常"             # 今の状態（1分ごとに更新）
+    alarm = Alarm("temp")       # 温度の警報メール
+    hum_alarm = Alarm("hum")    # 湿度の警報メール
+    st = "正常"             # 今の温度の状態（1分ごとに更新）
+    hst = "正常"            # 今の湿度の状態（1分ごとに更新）
     s = alarm_settings.load()   # 警報の設定（1分ごとに読み直す）
     last_logged = None      # 最後にCSVへ記録した区切りの時刻
     # I2Cのバス1番（ラズパイのGPIO2=SDA、GPIO3=SCL）を開く
@@ -208,13 +234,16 @@ def main():
                 if slot != last_logged:         # 毎分1回：記録と警報判定
                     s = alarm_settings.load()   # 設定を読み直す（画面で変えた設定がここで反映される）
                     st = status(t, st, s)
+                    hst = alarm_settings.hum_status(h, hst, s)
                     append_csv(now, t, h, st)
                     last_logged = slot
                     # print の内容は動作ログに残る（journalctl -u sht31-logger で見られる）
-                    print(f"{now:%H:%M:%S}  温度 {t:.1f}℃  湿度 {h:.1f}%  {st}", flush=True)
+                    hum_note = "" if hst == "正常" else f"  {hst}"
+                    print(f"{now:%H:%M:%S}  温度 {t:.1f}℃  湿度 {h:.1f}%  {st}{hum_note}", flush=True)
                     alarm.check(now, t, h, st, s)
+                    hum_alarm.check(now, t, h, hst, s)
                 # 現在値は毎回（5秒ごと）書く
-                write_now(now, t, h, status(t, st, s))
+                write_now(now, t, h, status(t, st, s), alarm_settings.hum_status(h, hst, s))
             except Exception as e:
                 # センサーの読み取りなどに失敗しても止まらず、次の測定で続ける
                 print(f"{now:%H:%M:%S}  読み取り失敗: {e}", flush=True)

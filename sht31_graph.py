@@ -90,6 +90,11 @@ def draw(times, temps, hums, day):
     # ---- 下段: 湿度 ----
     ax2.plot(times, hums, marker="o", markersize=3, color="tab:blue")
     ax2.set_ylabel("湿度 (%)")
+    # 湿度の警報（破線）と注意（点線）の基準を引く（湿度の警報を使う設定のときだけ）
+    if "hum_alarm" in th:
+        ax2.axhline(th["hum_alarm"], color="red", linestyle="--", label=f"高湿警報 {th['hum_alarm']:g}%")
+        ax2.axhline(th["hum_warn"], color="orange", linestyle=":", label=f"高湿注意 {th['hum_warn']:g}%")
+        ax2.legend(loc="upper left")
     ax2.grid(alpha=0.3)
     ax2.annotate(f"{hums[-1]:.1f}%", (times[-1], hums[-1]),
                  textcoords="offset points", xytext=(8, 0), fontsize=14, color="tab:blue")

@@ -151,6 +151,7 @@ def latest_reading(rows, day):
     return {"time": ts.strftime("%Y-%m-%d %H:%M"), "iso": ts.astimezone().isoformat(),
             "temp": t, "hum": h,
             "status": st or status(t),   # ロガーが記録した状態を優先する
+            "hum_status": alarm_settings.hum_status(h),   # 湿度の状態（記録には残していないので、ここで判定）
             # 5分以上新しい記録がなければ「止まっているかも」の印を付ける
             "stale": (datetime.now() - ts) > timedelta(minutes=5)}
 

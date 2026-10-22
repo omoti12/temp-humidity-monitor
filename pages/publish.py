@@ -137,7 +137,7 @@ def build():
         if rows:
             ts, t, h, st = rows[-1]
             latest = {"time": ts.astimezone().isoformat(), "temp": t, "hum": h,
-                      "status": st or "正常"}
+                      "status": st or "正常", "hum_status": alarm_settings.hum_status(h)}
             break
 
     # サイトが最初に読むファイル。ラズパイの現在値の窓口に届かないときは、この値を表示する

@@ -58,6 +58,9 @@
   #status.正常 { color: var(--ok); }
   #status.高温注意 { color: var(--hot-warn); } #status.高温警報, #status.高温 { color: var(--warn); }
   #status.低温注意 { color: var(--cold-warn); } #status.低温警報, #status.低温 { color: var(--out); }
+  /* 湿度の状態（高湿注意=黄、高湿警報=オレンジ。正常のときは表示しない） */
+  .substatus { font-size: .95rem; font-weight: 700; margin-top: 2px; }
+  #humStatus.高湿注意 { color: var(--hot-warn); } #humStatus.高湿警報 { color: var(--warn); }
   .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
   /* ---- 日付を選ぶボタンの並び ---- */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -112,7 +115,8 @@
   <!-- 現在の温度・湿度・状態（中身は下の showLatest() が書き込む） -->
   <section class="now">
     <div class="card"><div class="label">現在の温度</div><div class="value" id="temp">--</div></div>
-    <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div></div>
+    <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div>
+      <div class="substatus" id="humStatus" hidden></div></div>
     <div class="card"><div class="label">状態</div><div class="value" id="status">--</div>
       <div class="stale" id="stale" hidden>30分以上データが更新されていません</div></div>
   </section>
@@ -169,7 +173,13 @@
         <label>回復の幅（℃）<input type="number" step="0.1" min="0" max="5" id="s_hysteresis" required></label>
         <label>再通知の間隔（分。0で再通知しない）<input type="number" step="1" min="0" max="1440" id="s_remind_min" required></label>
       </div>
-      <div class="label" style="margin-top:8px">「注意」が1段目（軽い）、「警報」が2段目（深刻）です。高温は「注意 ≦ 警報」、低温は「警報 ≦ 注意」の温度にしてください。注意の段階がいらないときは、注意と警報を同じ温度にしてください</div>
+      <label class="check"><input type="checkbox" id="s_hum_enabled">湿度の警報を使う</label>
+      <div class="grid">
+        <label>湿度警報（2段目・%以上）<input type="number" step="0.1" min="0" max="100" id="s_hum_alarm" required></label>
+        <label>湿度注意（1段目・%以上）<input type="number" step="0.1" min="0" max="100" id="s_hum_warn" required></label>
+        <label>湿度の回復の幅（%）<input type="number" step="0.1" min="0" max="10" id="s_hum_hysteresis" required></label>
+      </div>
+      <div class="label" style="margin-top:8px">「注意」が1段目（軽い）、「警報」が2段目（深刻）です。高温と湿度は「注意 ≦ 警報」、低温は「警報 ≦ 注意」にしてください。注意の段階がいらないときは、注意と警報を同じ温度にしてください</div>
       <label class="check"><input type="checkbox" id="s_mail_on_warn">「注意」でもメールを送る（オフなら「警報」だけ送る）</label>
       <div class="row"><button type="submit">設定を保存</button></div>
       <p class="msg" id="settingsMsg"></p>
@@ -275,6 +285,9 @@ function buildCharts() {
     type: "line",
     data: { labels: slots, datasets: [
       { label: "湿度", data: [], borderColor: hum, backgroundColor: hum, pointRadius: 2, borderWidth: 2 },
+      // [1] [2] 湿度の警報（破線）と注意（点線）の基準（湿度の警報を使う設定のときだけ線が出る）
+      { label: "高湿警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高湿注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
     ] },
     options: lineOpts("%"),
   });
@@ -298,11 +311,19 @@ function showLatest(l, isLive) {
   $("hum").innerHTML = `${l.hum.toFixed(1)}<small>%</small>`;
   $("status").textContent = l.status;
   $("status").className = "value " + l.status;
+  showHumStatus(l.hum_status);
   // 測定時刻が古すぎるとき（リアルタイムなら5分、10分ごとのデータなら30分）は注意を出す
   $("stale").hidden = Date.now() - ts < (isLive ? 5 : 30) * 60 * 1000;
   $("stale").textContent = `${isLive ? 5 : 30}分以上データが更新されていません`;
   $("updated").textContent = `最終測定 ${fmt(ts)} ${ts.toTimeString().slice(0, isLive ? 8 : 5)}`
     + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
+}
+
+// 湿度の状態（高湿注意・高湿警報）を、湿度の数字の下に出す。正常なら出さない
+function showHumStatus(hs) {
+  $("humStatus").hidden = !hs || hs === "正常";
+  $("humStatus").textContent = hs || "";
+  $("humStatus").className = "substatus " + (hs || "");
 }
 
 // ラズパイの窓口から現在値を読む（5秒ごと）
@@ -347,6 +368,10 @@ async function load() {
     ds[3 + i].data = slots.map(() => th[k] ?? null);
   });
   humChart.data.datasets[0].data = pick("hum");
+  humChart.data.datasets[1].data = slots.map(() => th.hum_alarm ?? null);
+  humChart.data.datasets[2].data = slots.map(() => th.hum_warn ?? null);
+  // 湿度の警報を使わない設定のときは、凡例にも出さない
+  humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
   tempChart.update();
   humChart.update();
 
@@ -420,7 +445,8 @@ const ADMIN_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/recipients") : 
 const SETTINGS_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/settings") : "";
 let adminPw = "";
 // 警報の設定の項目（画面の入力欄の id は "s_" + 名前）
-const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min"];
+const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min",
+                      "hum_alarm", "hum_warn", "hum_hysteresis"];
 
 // メッセージを表示する（isError が true なら注意の色）
 function adminMsg(text, isError) {
@@ -475,6 +501,7 @@ function renderRecipients(list) {
 function renderSettings(st) {
   for (const k of SETTING_KEYS) $("s_" + k).value = st[k];
   $("s_mail_on_warn").checked = !!st.mail_on_warn;
+  $("s_hum_enabled").checked = !!st.hum_enabled;
   $("settingsForm").hidden = false;
 }
 
@@ -506,7 +533,7 @@ $("pwForm").onsubmit = async (e) => {
 // 「設定を保存」: 入力した設定をラズパイに保存する
 $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
-  const data = { mail_on_warn: $("s_mail_on_warn").checked };
+  const data = { mail_on_warn: $("s_mail_on_warn").checked, hum_enabled: $("s_hum_enabled").checked };
   for (const k of SETTING_KEYS) data[k] = Number($("s_" + k).value);
   settingsMsg("保存中...");
   try {

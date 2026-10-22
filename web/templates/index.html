@@ -55,6 +55,9 @@
   #status.正常 { color: var(--ok); }
   #status.高温注意 { color: var(--hot-warn); } #status.高温警報, #status.高温 { color: var(--warn); }
   #status.低温注意 { color: var(--cold-warn); } #status.低温警報, #status.低温 { color: var(--out); }
+  /* 湿度の状態（高湿注意=黄、高湿警報=オレンジ。正常のときは表示しない） */
+  .substatus { font-size: .95rem; font-weight: 700; margin-top: 2px; }
+  #humStatus.高湿注意 { color: var(--hot-warn); } #humStatus.高湿警報 { color: var(--warn); }
   .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
   /* ---- 日付を選ぶボタンの並び ---- */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -90,7 +93,8 @@
   <!-- 現在の温度・湿度・状態（中身は下の load() が書き込む） -->
   <section class="now">
     <div class="card"><div class="label">現在の温度</div><div class="value" id="temp">--</div></div>
-    <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div></div>
+    <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div>
+      <div class="substatus" id="humStatus" hidden></div></div>
     <div class="card"><div class="label">状態</div><div class="value" id="status">--</div>
       <div class="stale" id="stale" hidden>5分以上データが届いていません</div></div>
   </section>
@@ -219,6 +223,9 @@ function buildCharts() {
     type: "line",
     data: { labels: slots, datasets: [
       { label: "湿度", data: [], borderColor: hum, backgroundColor: hum, pointRadius: 2, borderWidth: 2 },
+      // [1] [2] 湿度の警報（破線）と注意（点線）の基準（湿度の警報を使う設定のときだけ線が出る）
+      { label: "高湿警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高湿注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
     ] },
     options: lineOpts("%"),
   });
@@ -241,6 +248,11 @@ async function load() {
     $("hum").innerHTML = `${d.latest.hum.toFixed(1)}<small>%</small>`;
     $("status").textContent = d.latest.status;
     $("status").className = "value " + d.latest.status;
+    // 湿度の状態（高湿注意・高湿警報）を、湿度の数字の下に出す。正常なら出さない
+    const hs = d.latest.hum_status;
+    $("humStatus").hidden = !hs || hs === "正常";
+    $("humStatus").textContent = hs || "";
+    $("humStatus").className = "substatus " + (hs || "");
     $("stale").hidden = !d.latest.stale;
     $("updated").textContent = `最終記録 ${d.latest.time}`;
   }
@@ -258,6 +270,10 @@ async function load() {
     ds[3 + i].data = slots.map(() => th[k] ?? null);
   });
   humChart.data.datasets[0].data = pick("hum");
+  humChart.data.datasets[1].data = slots.map(() => th.hum_alarm ?? null);
+  humChart.data.datasets[2].data = slots.map(() => th.hum_warn ?? null);
+  // 湿度の警報を使わない設定のときは、凡例にも出さない
+  humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
   tempChart.update();
   humChart.update();
 
