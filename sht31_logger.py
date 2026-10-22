@@ -155,7 +155,8 @@ class Alarm:
             self.last_sent = time.time()
         except Exception as e:
             # 送れなかったら notified を更新しない → 次の測定（1分後）でもう一度送る
-            print(f"メール送信失敗（次の測定で再送）: {e}", flush=True)
+            # エラー文に宛先が含まれることがあるので、アドレスは伏せ字にしてログに残す
+            print(f"メール送信失敗（次の測定で再送）: {alert_mail.mask(e)}", flush=True)
 
 
 # ============================================================

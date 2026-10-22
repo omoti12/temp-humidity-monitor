@@ -290,7 +290,8 @@ def api_recipients():
                 "心当たりがない場合は、管理者に連絡してください。", to=[email])
         except Exception:
             notified = False
-        print(f"警報メールの宛先を追加: {email}", flush=True)
+        # 動作ログにはアドレスを伏せ字で残す
+        print(f"警報メールの宛先を追加: {alert_mail.mask(email)}", flush=True)
         return admin_cors(jsonify({"recipients": lst, "notified": notified}))
 
     # 削除（最後の1件は消せない。消すと警報がどこにも届かなくなるため）
@@ -304,7 +305,7 @@ def api_recipients():
         lst = alert_mail.update_recipients(remove)
     except ValueError as e:
         return admin_error(str(e), 400)
-    print(f"警報メールの宛先を削除: {email}", flush=True)
+    print(f"警報メールの宛先を削除: {alert_mail.mask(email)}", flush=True)
     return admin_cors(jsonify({"recipients": lst}))
 
 

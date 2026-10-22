@@ -10,6 +10,7 @@
 # ============================================================
 import json
 import os
+import re
 import smtplib
 import threading
 from email.message import EmailMessage
@@ -23,6 +24,19 @@ RECIPIENTS_PATH = os.path.join(CONFIG_DIR, "recipients.json")
 
 # 宛先リストを同時に書き換えて壊さないための鍵
 _lock = threading.Lock()
+
+
+# 文の中のメールアドレスを見つける形（伏せ字にするため）
+_EMAIL_IN_TEXT = re.compile(r"([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+
+def mask(text):
+    """文の中のメールアドレスを伏せ字にする（例: maruyama@example.com → ma***@example.com）。
+    動作ログにアドレスをそのまま残さないために使う"""
+    def hide(m):
+        name = m.group(1)
+        return name[:2 if len(name) > 2 else 1] + "***@" + m.group(2)
+    return _EMAIL_IN_TEXT.sub(hide, str(text))
 
 
 def load_config(path=None):
