@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<main>
+<main data-step="{{ step }}">
   <!-- 見出しと最終記録の時刻 -->
   <header>
     <h1>温湿度モニター</h1>
@@ -146,7 +146,9 @@ let tempChart, humChart;
 
 // 0:00〜23:50 の10分刻みの軸（記録がない時間は空白にする）
 const slots = [];
-for (let m = 0; m < 24 * 60; m += {{ step }})
+// 間隔（分）は web/app.py が <main data-step="10"> に入れたものを読む
+const STEP = Number(document.querySelector("main").dataset.step) || 10;
+for (let m = 0; m < 24 * 60; m += STEP)
   slots.push(String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"));
 
 // スマホなど指で操作する画面か（拡大のしかたを変える）
