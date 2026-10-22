@@ -66,8 +66,13 @@ def validate(new):
     for k in ("high_alarm", "high_warn", "low_warn", "low_alarm"):
         if not -40 <= s[k] <= 125:
             raise ValueError("温度は -40〜125℃ の範囲で入力してください")
-    if not s["low_alarm"] < s["low_warn"] < s["high_warn"] < s["high_alarm"]:
-        raise ValueError("「低温警報 ＜ 低温注意 ＜ 高温注意 ＜ 高温警報」の順になるように入力してください")
+    # 注意と警報を同じ温度にすると「注意の段階なし」（その温度でいきなり警報）として扱う
+    if s["high_warn"] > s["high_alarm"]:
+        raise ValueError("高温注意は、高温警報と同じか低い温度にしてください（同じにすると高温注意なし）")
+    if s["low_warn"] < s["low_alarm"]:
+        raise ValueError("低温注意は、低温警報と同じか高い温度にしてください（同じにすると低温注意なし）")
+    if not s["low_warn"] < s["high_warn"]:
+        raise ValueError("低温注意（低温警報）は、高温注意（高温警報）より低い温度にしてください")
     if not 0 <= s["hysteresis"] <= 5:
         raise ValueError("回復の幅は 0〜5℃ で入力してください")
     if not 0 <= s["remind_min"] <= 1440:
@@ -105,14 +110,21 @@ def status(t, prev="正常", s=None):
     else:
         raw = 0
     p = LEVEL_OF.get(prev, 0)
+    # 注意と警報が同じ温度なら「注意の段階なし」。回復するときも注意を通らない
+    no_high_warn = s["high_warn"] == s["high_alarm"]
+    no_low_warn = s["low_warn"] == s["low_alarm"]
     # 高温側から下がってきたとき: 基準より hysteresis 以上下がるまでは前の段階を保つ
     if p > 0 and raw < p:
         for k in range(p, max(raw, 0), -1):
+            if k == 1 and no_high_warn:
+                continue
             if t > s["high_alarm" if k == 2 else "high_warn"] - hyst:
                 return LEVELS[k]
     # 低温側から上がってきたとき: 基準より hysteresis 以上上がるまでは前の段階を保つ
     if p < 0 and raw > p:
         for k in range(p, min(raw, 0)):
+            if k == -1 and no_low_warn:
+                continue
             if t < s["low_alarm" if k == -2 else "low_warn"] + hyst:
                 return LEVELS[k]
     return LEVELS[raw]
