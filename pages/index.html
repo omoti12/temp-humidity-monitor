@@ -142,14 +142,14 @@
     <form id="settingsForm" hidden>
       <h3 class="sub">警報の設定</h3>
       <div class="grid">
-        <label>高温警報（℃以上）<input type="number" step="0.1" id="s_high_alarm" required></label>
-        <label>高温注意（℃以上）<input type="number" step="0.1" id="s_high_warn" required></label>
-        <label>低温注意（℃以下）<input type="number" step="0.1" id="s_low_warn" required></label>
-        <label>低温警報（℃以下）<input type="number" step="0.1" id="s_low_alarm" required></label>
+        <label>高温警報（2段目・℃以上）<input type="number" step="0.1" id="s_high_alarm" required></label>
+        <label>高温注意（1段目・℃以上）<input type="number" step="0.1" id="s_high_warn" required></label>
+        <label>低温注意（1段目・℃以下）<input type="number" step="0.1" id="s_low_warn" required></label>
+        <label>低温警報（2段目・℃以下）<input type="number" step="0.1" id="s_low_alarm" required></label>
         <label>回復の幅（℃）<input type="number" step="0.1" min="0" max="5" id="s_hysteresis" required></label>
         <label>再通知の間隔（分。0で再通知しない）<input type="number" step="1" min="0" max="1440" id="s_remind_min" required></label>
       </div>
-      <div class="label" style="margin-top:8px">注意の段階がいらないときは、注意と警報を同じ温度にしてください</div>
+      <div class="label" style="margin-top:8px">「注意」が1段目（軽い）、「警報」が2段目（深刻）です。高温は「注意 ≦ 警報」、低温は「警報 ≦ 注意」の温度にしてください。注意の段階がいらないときは、注意と警報を同じ温度にしてください</div>
       <label class="check"><input type="checkbox" id="s_mail_on_warn">「注意」でもメールを送る（オフなら「警報」だけ送る）</label>
       <div class="row"><button type="submit">設定を保存</button></div>
       <p class="msg" id="settingsMsg"></p>
