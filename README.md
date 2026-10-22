@@ -213,6 +213,17 @@ printf '[Journal]\nStorage=persistent\nSystemMaxUse=50M\n' | sudo tee /etc/syste
 sudo systemctl restart systemd-journald
 ```
 
+ラズパイ全体が固まったときに自動で再起動する（ウォッチドッグ）：
+
+```
+sudo mkdir -p /etc/systemd/system.conf.d
+sudo cp ~/temp-monitor/systemd/watchdog.conf /etc/systemd/system.conf.d/
+sudo systemctl daemon-reexec
+systemctl show -p RuntimeWatchdogUSec    # RuntimeWatchdogUSec=15s と出れば有効
+```
+
+固まってから約15秒で再起動し、記録などは自動で再開する。ただし「重いけれど動いている」「ネットだけ切れている」ときは再起動しない。
+
 電源アダプタはラズパイ5用の 5V 5A（27W）を使う。力不足だと負荷がかかったときに止まる
 （`vcgencmd get_throttled` が `throttled=0x0` 以外なら電圧不足が起きている）。
 
