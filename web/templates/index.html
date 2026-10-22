@@ -111,6 +111,8 @@
     <button data-hours="6">6時間</button>
     <button data-hours="3">3時間</button>
     <button data-hours="1">1時間</button>
+    <button data-move="-1">◀ 前へ</button>
+    <button data-move="1">次へ ▶</button>
     <span class="hint" id="zoomHint"></span>
   </div>
 
@@ -287,8 +289,16 @@ function showHours(h) {
   const max = Math.max(last, n);
   for (const c of [tempChart, humChart]) c.zoomScale("x", { min: max - n, max }, "none");
 }
+// ボタン: 表示している範囲を、幅の半分だけ前（dir = -1）か次（dir = 1）へ動かす
+function moveRange(dir) {
+  const { min, max } = tempChart.scales.x;
+  const width = max - min;
+  const step = Math.max(1, Math.round(width / 2));
+  const newMin = Math.min(Math.max(min + dir * step, 0), slots.length - 1 - width);
+  for (const c of [tempChart, humChart]) c.zoomScale("x", { min: newMin, max: newMin + width }, "none");
+}
 document.querySelectorAll(".zoombar button").forEach((b) => {
-  b.onclick = () => showHours(Number(b.dataset.hours));
+  b.onclick = () => b.dataset.move ? moveRange(Number(b.dataset.move)) : showHours(Number(b.dataset.hours));
 });
 $("zoomHint").textContent = isTouch
   ? "2本指で拡大・1本指で左右に移動"
