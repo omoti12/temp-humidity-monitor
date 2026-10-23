@@ -61,7 +61,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 ### 2. インストール（ラズパイで）
 
 ```
-sudo apt install git python3-smbus2 python3-matplotlib python3-flask fonts-noto-cjk rclone
+sudo apt install git python3-smbus2 python3-matplotlib python3-flask python3-waitress fonts-noto-cjk rclone
 git clone https://github.com/omoti12/temp-humidity-monitor.git /home/iot-user/temp-monitor
 ```
 
@@ -237,10 +237,14 @@ sudo systemctl daemon-reexec
 ネットが切れたときに自動で直す（ネットの見張り役 `netcheck.py`）：
 
 ```
+sudo install -o root -g root -m 755 ~/temp-monitor/netcheck.py /usr/local/sbin/temp-monitor-netcheck.py
 sudo cp ~/temp-monitor/systemd/netcheck.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now netcheck
 ```
+
+見張り役は root で動くので、iot-user が書き換えられない `/usr/local/sbin` にコピーしたものを動かす。
+`netcheck.py` を更新したときは、1行目の `install` をもう一度実行してから `sudo systemctl restart netcheck`。
 
 インターネットにつながらない状態が5分続いたらネットワークをつなぎ直し、15分続いたら再起動する。
 ルーターまで届いていてインターネット側だけが切れているときは再起動しない。再起動は1時間に1回まで。

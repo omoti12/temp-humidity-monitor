@@ -11,7 +11,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/netcheck.py
+# root として動かすので、iot-user が書き換えられない場所（/usr/local/sbin）に置いたコピーを動かす
+# （置き方: sudo install -o root -g root -m 755 ~/temp-monitor/netcheck.py /usr/local/sbin/temp-monitor-netcheck.py）
+# netcheck.py を更新したときは、上の install をもう一度実行してから sudo systemctl restart netcheck
+ExecStart=/usr/bin/python3 /usr/local/sbin/temp-monitor-netcheck.py
 # つなぎ直し・再起動に root の権限が要るので、root として動かす
 User=root
 Restart=always

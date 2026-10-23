@@ -212,10 +212,23 @@ MAX_RECIPIENTS = 20         # 宛先の上限（いたずらで大量に登録�
 # メールアドレスの形（○○@○○.○○）になっているかの確認
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
 
-# パスワードの総当たりを防ぐ: 10分間に10回まちがえたら、しばらく受け付けない
+# パスワードの総当たりを防ぐ
+#   同じ相手（IPアドレス）が10分間に10回まちがえたら、その相手からはしばらく受け付けない
+#   いろいろな相手から合わせて10分間に50回まちがえたら、全員しばらく受け付けない
 _fail_lock = threading.Lock()
-_fail_times = []
-FAIL_LIMIT, FAIL_WINDOW = 10, 600
+_fail_times = {}            # 相手 → まちがえた時刻のリスト
+FAIL_LIMIT, FAIL_LIMIT_ALL, FAIL_WINDOW = 10, 50, 600
+
+
+def client_id():
+    """問い合わせてきた相手のIPアドレス。インターネットからの問い合わせは Tailscale Funnel が
+    ラズパイの中（127.0.0.1）から中継してくるので、そのときは中継元が付ける X-Forwarded-For を使う。
+    相手が自分で偽の X-Forwarded-For を付けてきても、中継元は本当の相手を最後に書き足すので、最後を使う"""
+    addr = request.remote_addr or ""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if addr in ("127.0.0.1", "::1") and forwarded:
+        return forwarded.split(",")[-1].strip()
+    return addr
 
 
 def admin_cors(resp):
@@ -238,16 +251,22 @@ def check_admin():
     if not password:
         return admin_error("ラズパイに管理用パスワード（ADMIN_PASSWORD）が設定されていません", 503)
     now = time.time()
+    who = client_id()
     with _fail_lock:
-        _fail_times[:] = [t for t in _fail_times if now - t < FAIL_WINDOW]
-        if len(_fail_times) >= FAIL_LIMIT:
+        # 10分より前のまちがいは忘れる
+        for k in list(_fail_times):
+            _fail_times[k] = [t for t in _fail_times[k] if now - t < FAIL_WINDOW]
+            if not _fail_times[k]:
+                del _fail_times[k]
+        total = sum(len(v) for v in _fail_times.values())
+        if len(_fail_times.get(who, [])) >= FAIL_LIMIT or total >= FAIL_LIMIT_ALL:
             return admin_error("パスワードを何度もまちがえたため、10分ほど受け付けません", 429)
     # 画面からは「Authorization: Bearer パスワード」の形で送られてくる
     given = request.headers.get("Authorization", "").removeprefix("Bearer ")
     if hmac.compare_digest(given.encode(), password.encode()):
         return None
     with _fail_lock:
-        _fail_times.append(now)
+        _fail_times.setdefault(who, []).append(now)
     time.sleep(1)       # まちがえたときは少し待たせて、総当たりを遅くする
     return admin_error("パスワードが違います", 401)
 
@@ -349,4 +368,15 @@ def download():
 # このファイルを直接実行したときの入口
 # 0.0.0.0 = ラズパイ以外（同じネットワークのPCなど）からも開けるようにする
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    port = int(os.environ.get("PORT", 8000))
+    try:
+        # インターネットに出す窓口があるので、本番向けのサーバー waitress で動かす（無料）
+        # 入れ方: sudo apt install python3-waitress
+        from waitress import serve
+        print(f"waitress で起動します（ポート {port}）", flush=True)
+        serve(app, host="0.0.0.0", port=port, threads=8)
+    except ImportError:
+        # waitress が入っていないときは、Flask 付属の開発用サーバーで動かす（動作は同じ）
+        print("waitress が入っていないため、開発用サーバーで起動します"
+              "（sudo apt install python3-waitress を推奨）", flush=True)
+        app.run(host="0.0.0.0", port=port)

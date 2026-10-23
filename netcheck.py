@@ -10,6 +10,8 @@
 #
 # 動かし方
 #   systemd（netcheck.service）が root として常に動かす（つなぎ直し・再起動に root の権限が要るため）
+#   root で動くので、iot-user が書き換えられない /usr/local/sbin/temp-monitor-netcheck.py にコピーして動かす
+#   （このファイルを直したら: sudo install -o root -g root -m 755 netcheck.py /usr/local/sbin/temp-monitor-netcheck.py）
 #   ログを見る : journalctl -u netcheck -n 20
 #   （ログは状態が変わったときだけ書く。SDカードへの書き込みを増やさないため）
 # ============================================================
