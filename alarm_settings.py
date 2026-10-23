@@ -31,6 +31,7 @@ DEFAULTS = {
     "hum_alarm": 70.0,      # この湿度以上で「高湿警報」
     "hum_warn": 65.0,       # この湿度以上で「高湿注意」
     "hum_hysteresis": 2.0,  # 湿度の回復と判断する幅（70%の警報なら68%以下に下がったら解除）
+    "sensor_fail_min": 5,   # センサーで測れない状態がこの分数続いたら【センサー異常】のメールを送る
 }
 
 # 湿度の状態の名前（数字が大きいほど高い）
@@ -66,8 +67,9 @@ def validate(new):
                   "hum_alarm", "hum_warn", "hum_hysteresis"):
             if k in new:
                 s[k] = round(float(new[k]), 1)
-        if "remind_min" in new:
-            s["remind_min"] = int(new["remind_min"])
+        for k in ("remind_min", "sensor_fail_min"):
+            if k in new:
+                s[k] = int(new[k])
         for k in ("mail_on_warn", "hum_enabled"):
             if k in new:
                 s[k] = bool(new[k])
@@ -96,6 +98,8 @@ def validate(new):
         raise ValueError("湿度注意は、湿度警報と同じか低い値にしてください（同じにすると湿度注意なし）")
     if not 0 <= s["hum_hysteresis"] <= 10:
         raise ValueError("湿度の回復の幅は 0〜10% で入力してください")
+    if not 1 <= s["sensor_fail_min"] <= 1440:
+        raise ValueError("センサー異常を知らせるまでの時間は 1〜1440分 で入力してください")
     return s
 
 

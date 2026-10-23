@@ -8,6 +8,7 @@
 #   2. 読んだ値を「現在値」として now.json に書く（サイトのリアルタイム表示用）
 #   3. 1分に1回、値をCSVファイルに記録し、警報（高温・低温）を判定する
 #   4. 状態が変わったら警報メールを送る
+#   5. センサーで測れない状態が続いたら【センサー異常】のメールを送る
 #
 # 動かし方
 #   普段は systemd（sht31-logger.service）が自動で起動・再起動する
@@ -181,6 +182,58 @@ class Alarm:
         return f"【回復】湿度 {h:.1f}% 警報が解除されました（現在: {st}）"
 
 
+class SensorWatch:
+    """センサーで測れない状態が sensor_fail_min 分続いたら【センサー異常】、
+    また測れるようになったら【回復】のメールを送る"""
+
+    def __init__(self):
+        self.last_ok = time.time()  # 最後に測れた時刻（起動したときから数える）
+        self.last_ok_dt = None      # 最後に測れた日時（メールの本文用）
+        self.notified = False       # 【センサー異常】を知らせたか
+        self.last_sent = 0.0        # 最後にメールを送った時刻（再通知の判断に使う）
+        self.last_try = 0.0         # 最後にメールの送信を試した時刻
+
+    def ok(self, now):
+        # 測れたとき（5秒ごと）に呼ばれる
+        self.last_ok = time.time()
+        self.last_ok_dt = now
+        if self.notified and self._send("【回復】センサーの読み取りが戻りました",
+                                        f"日時: {now:%Y-%m-%d %H:%M}\n温度・湿度の測定が再開しました。"):
+            self.notified = False
+
+    def failed(self, now, err, s):
+        # 測れなかったとき（5秒ごと）に呼ばれる
+        down_min = int((time.time() - self.last_ok) // 60)     # 測れていない時間（分）
+        if down_min < s["sensor_fail_min"]:
+            return
+        # すでに知らせていたら、再通知の間隔がたつまでは送らない
+        if self.notified and not (s["remind_min"] > 0
+                                  and time.time() - self.last_sent >= s["remind_min"] * 60):
+            return
+        last = f"{self.last_ok_dt:%Y-%m-%d %H:%M}" if self.last_ok_dt else "（起動してから一度も測れていません）"
+        subject = ("【継続】" if self.notified else "") + f"【センサー異常】温度・湿度が{down_min}分間測れていません"
+        body = (f"日時: {now:%Y-%m-%d %H:%M}\n最後に測れた日時: {last}\nエラーの内容: {alert_mail.mask(err)}\n\n"
+                "センサーの配線が外れていないか、ラズパイの状態を確認してください。")
+        if self._send(subject, body):
+            self.notified = True
+
+    def _send(self, subject, body):
+        # メールを送る。送れたら（またはメールの設定がなければ）True。失敗したら1分後に送り直す
+        if time.time() - self.last_try < 60:
+            return False
+        self.last_try = time.time()
+        try:
+            if send_mail(subject, body):
+                print(f"メール送信: {subject}", flush=True)
+            else:
+                print(f"メール設定がないため送信しません: {subject}", flush=True)
+            self.last_sent = time.time()
+            return True
+        except Exception as e:
+            print(f"メール送信失敗（1分後に再送）: {alert_mail.mask(e)}", flush=True)
+            return False
+
+
 # ============================================================
 # 保存（CSVと現在値）
 # ============================================================
@@ -222,17 +275,34 @@ def main():
     st = "正常"             # 今の温度の状態（1分ごとに更新）
     hst = "正常"            # 今の湿度の状態（1分ごとに更新）
     s = alarm_settings.load()   # 警報の設定（1分ごとに読み直す）
+    settings_slot = None    # 最後に設定を読み直した区切りの時刻
     last_logged = None      # 最後にCSVへ記録した区切りの時刻
-    # I2Cのバス1番（ラズパイのGPIO2=SDA、GPIO3=SCL）を開く
-    with SMBus(1) as bus:
-        while True:
-            now = datetime.now()
-            # 今が何番目の「1分の区切り」か。この番号が変わったら新しい1分に入ったということ
-            slot = int(time.time() // INTERVAL)
+    sensor = SensorWatch()  # センサーで測れない状態が続いたら知らせる
+    last_fail_log = 0.0     # 最後に「読み取り失敗」をログに書いた時刻（ログは1分に1回まで）
+    bus = None              # I2Cの接続（開けなかったときは次の測定でもう一度開く）
+    while True:
+        now = datetime.now()
+        # 今が何番目の「1分の区切り」か。この番号が変わったら新しい1分に入ったということ
+        slot = int(time.time() // INTERVAL)
+        if slot != settings_slot:
+            s = alarm_settings.load()   # 設定を読み直す（画面で変えた設定がここで反映される）
+            settings_slot = slot
+        try:
+            # I2Cのバス1番（ラズパイのGPIO2=SDA、GPIO3=SCL）を開いて、センサーを読む
+            if bus is None:
+                bus = SMBus(1)
+            t, h = read_sht31(bus)
+        except Exception as e:
+            # 読めなくても止まらず、次の測定（5秒後）で続ける。ログは1分に1回だけ書く
+            if time.time() - last_fail_log >= 60:
+                print(f"{now:%H:%M:%S}  読み取り失敗: {e}", flush=True)
+                last_fail_log = time.time()
+            sensor.failed(now, e, s)
+        else:
+            last_fail_log = 0.0
+            sensor.ok(now)
             try:
-                t, h = read_sht31(bus)
                 if slot != last_logged:         # 毎分1回：記録と警報判定
-                    s = alarm_settings.load()   # 設定を読み直す（画面で変えた設定がここで反映される）
                     st = status(t, st, s)
                     hst = alarm_settings.hum_status(h, hst, s)
                     append_csv(now, t, h, st)
@@ -245,10 +315,10 @@ def main():
                 # 現在値は毎回（5秒ごと）書く
                 write_now(now, t, h, status(t, st, s), alarm_settings.hum_status(h, hst, s))
             except Exception as e:
-                # センサーの読み取りなどに失敗しても止まらず、次の測定で続ける
-                print(f"{now:%H:%M:%S}  読み取り失敗: {e}", flush=True)
-            # 次の区切り（5秒ごと）まで待つ。測定にかかった時間でずれていかないようにする
-            time.sleep(NOW_INTERVAL - time.time() % NOW_INTERVAL)
+                # 記録や判定で問題が起きても止まらず、次の測定で続ける
+                print(f"{now:%H:%M:%S}  記録・判定でエラー: {e}", flush=True)
+        # 次の区切り（5秒ごと）まで待つ。測定にかかった時間でずれていかないようにする
+        time.sleep(NOW_INTERVAL - time.time() % NOW_INTERVAL)
 
 
 # ============================================================

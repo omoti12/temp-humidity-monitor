@@ -172,6 +172,7 @@
         <label>低温警報（2段目・℃以下）<input type="number" step="0.1" id="s_low_alarm" required></label>
         <label>回復の幅（℃）<input type="number" step="0.1" min="0" max="5" id="s_hysteresis" required></label>
         <label>再通知の間隔（分。0で再通知しない）<input type="number" step="1" min="0" max="1440" id="s_remind_min" required></label>
+        <label>センサー異常を知らせるまで（分）<input type="number" step="1" min="1" max="1440" id="s_sensor_fail_min" required></label>
       </div>
       <label class="check"><input type="checkbox" id="s_hum_enabled">湿度の警報を使う</label>
       <div class="grid">
@@ -446,7 +447,7 @@ const SETTINGS_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/settings") :
 let adminPw = "";
 // 警報の設定の項目（画面の入力欄の id は "s_" + 名前）
 const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min",
-                      "hum_alarm", "hum_warn", "hum_hysteresis"];
+                      "hum_alarm", "hum_warn", "hum_hysteresis", "sensor_fail_min"];
 
 // メッセージを表示する（isError が true なら注意の色）
 function adminMsg(text, isError) {
