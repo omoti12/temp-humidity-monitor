@@ -256,6 +256,16 @@ sudo systemctl enable --now netcheck
 ラズパイにつないだモニターにグラフ画像を出し続けるとき：
 `feh --fullscreen --reload 60 /dev/shm/temp-monitor/graph.png`
 
+## セキュリティの設定
+
+- GitHub の main ブランチはルールセット（main-protect）で守っている。書き込めるのはリポジトリの持ち主と Claude だけで、
+  ラズパイの鍵（Deploy key）は gh-pages（公開サイト）にしか書き込めない
+- ラズパイでは sudo にパスワードが必要（`/etc/sudoers.d/010_iot-user-nopasswd` は削除済み）
+- Node-RED は使っていないので止めている（使うときは `sudo systemctl enable --now nodered`。その場合はパスワードを設定すること）
+- インターネットに出しているのは `/api/now`・`/api/settings`・`/api/recipients` の3つだけ（Tailscale Funnel）。
+  設定と宛先は管理用パスワードが必要で、まちがいが続くと相手ごとに10分止める
+- ソフトの更新はときどき `sudo apt update && sudo apt full-upgrade -y`
+
 ## 設定値
 
 | 項目 | 値 | 場所 |
