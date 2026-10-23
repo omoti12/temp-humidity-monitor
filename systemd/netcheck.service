@@ -1,0 +1,21 @@
+# ============================================================
+# ネットの見張り役（netcheck.py）を常に動かし続けるための設定
+#   インターネットにつながらない状態が続いたら、5分でつなぎ直し、15分で再起動する
+# よく使うコマンド
+#   状態を見る : systemctl status netcheck
+#   ログを見る : journalctl -u netcheck -n 20
+# ============================================================
+[Unit]
+Description=Network watchdog (reconnect / reboot when the internet is down)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/netcheck.py
+# つなぎ直し・再起動に root の権限が要るので、root として動かす
+User=root
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

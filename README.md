@@ -32,6 +32,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | ファイル | 内容 |
 |---|---|
 | `sht31_logger.py` | 測定・CSV記録・警報メール |
+| `netcheck.py` | ネットの見張り役（つながらないときに、つなぎ直し・再起動） |
 | `alarm_settings.py` | 警報の設定（2段階の温度の基準など）と状態の判定 |
 | `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
@@ -232,6 +233,18 @@ sudo systemctl daemon-reexec
 ```
 
 再起動すると記録などは自動で再開する。ただし「重いけれど動いている」「ネットだけ切れている」ときは再起動しない。
+
+ネットが切れたときに自動で直す（ネットの見張り役 `netcheck.py`）：
+
+```
+sudo cp ~/temp-monitor/systemd/netcheck.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now netcheck
+```
+
+インターネットにつながらない状態が5分続いたらネットワークをつなぎ直し、15分続いたら再起動する。
+ルーターまで届いていてインターネット側だけが切れているときは再起動しない。再起動は1時間に1回まで。
+ログは `journalctl -u netcheck -n 20`（状態が変わったときだけ書く）。
 
 電源アダプタはラズパイ5用の 5V 5A（27W）を使う。力不足だと負荷がかかったときに止まる
 （`vcgencmd get_throttled` が `throttled=0x0` 以外なら電圧不足が起きている）。
