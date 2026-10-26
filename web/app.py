@@ -2,20 +2,20 @@
 """温湿度モニター Webサイト: sht31_logger.py が書いたCSVを読んで表示する。"""
 # ============================================================
 # このプログラムの役割
-#   ラズパイの中で動く小さなWebサーバー（Flask）。サイトはすべてラズパイの中にあり、
-#   インターネットには公開しない。見られるのは次の端末だけ:
-#     ・ラズパイと同じネットワーク（社内のWi-Fiなど）の端末 … http://raspberrypi.local:8000
-#     ・Tailscale にログインした端末（外からでも）      … https://raspberrypi.tailfa1dcc.ts.net
-#   画面は index.html（1つだけ）。グラフの部品などは static/ に置いてある
+#   ラズパイの中で動く小さなWebサーバー（Flask）。
+#   1. ラズパイ内のサイト（http://ラズパイのIP:8000）を表示する
+#        画面は templates/index.html、グラフの部品は static/chart.umd.js
+#   2. 現在値の窓口 /api/now を提供する
+#        公開サイト（GitHub Pages）は5秒ごとにここを読んで現在値を表示する
+#        インターネットからは Tailscale Funnel 経由で /api/now だけが見える
 #
 # URLの一覧
-#   /                    … サイトの画面（index.html）
-#   /data/latest.json    … 最新の記録・記録のある日の一覧・警報の基準・設置場所の名前
-#   /data/日付.json       … その日の10分ごとのデータ（グラフ用）
-#   /data/日付.csv        … その日のCSVをダウンロード
-#   /api/now             … 現在値（5秒ごとに更新）
-#   /api/recipients      … 警報メールの宛先の表示・追加・削除（管理用パスワードが必要）
-#   /api/settings        … 警報の設定の表示・変更（管理用パスワードが必要）
+#   /                 … サイトの画面
+#   /api/data?day=日付 … その日の10分ごとのデータと最新値（JSON）
+#   /api/now          … 現在値（JSON）。ログイン不要
+#   /api/recipients   … 警報メールの宛先の表示・追加・削除（管理用パスワードが必要）
+#   /api/settings     … 警報の設定（2段階の温度の基準など）の表示・変更（管理用パスワードが必要）
+#   /download?day=日付 … その日のCSVをダウンロード
 #
 # 動かし方
 #   systemd（temp-web.service）が自動で起動する
@@ -26,12 +26,13 @@ import hmac
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timedelta
 
-from flask import Flask, Response, abort, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
 # 1つ上のフォルダにある alert_mail.py（警報メールの設定・宛先・送信）を使えるようにする
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,13 +44,6 @@ LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
 NOW_PATH = os.environ.get("NOW_PATH", "/dev/shm/temp-monitor/now.json")   # sht31_logger.py と同じ場所
 STEP_MIN = 10          # グラフの間隔（分）
 
-# このファイルがあるフォルダ（画面 index.html と static/ の場所）
-WEB_DIR = os.path.dirname(os.path.abspath(__file__))
-# 画面から読む部品（static/ にあるもの）。この一覧にないファイルは渡さない
-STATIC_FILES = {"chart.umd.js", "chartjs-plugin-zoom.min.js", "hammer.min.js",
-                "manifest.webmanifest", "icon-192.png", "icon-512.png", "sw.js",
-                "chart.js-LICENSE.md", "chartjs-plugin-zoom-LICENSE.md", "hammerjs-LICENSE.md"}
-
 # ログイン用。環境変数 WEB_USER / WEB_PASSWORD で設定する（未設定ならログインなし）
 WEB_USER = os.environ.get("WEB_USER", "")
 WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "")
@@ -60,9 +54,10 @@ app = Flask(__name__)
 
 @app.before_request
 def require_login():
-    # どのページを開くときも、最初にここを通る（サイト全体にパスワードをかけるとき用。ふだんは未設定）
-    # 宛先と設定の管理（/api/recipients・/api/settings）は、下の check_admin() で管理用パスワードを確認する
-    if not WEB_PASSWORD or request.path in ("/api/recipients", "/api/settings"):
+    # どのページを開くときも、最初にここを通る（パスワードの確認）
+    # 現在値だけは公開サイト（GitHub Pages）から読めるようにログイン不要にする
+    # 宛先の管理（/api/recipients）は、下の check_admin() で別の管理用パスワードを確認する
+    if not WEB_PASSWORD or request.path in ("/api/now", "/api/recipients", "/api/settings"):
         return None
     # ブラウザが送ってきたユーザー名・パスワードを確認する
     # （hmac.compare_digest は、比べる時間から中身を推測されにくい比べ方）
@@ -73,17 +68,6 @@ def require_login():
     # 合っていなければ、ブラウザにログイン画面を出させる
     return Response("ログインが必要です", 401,
                     {"WWW-Authenticate": 'Basic realm="temp-monitor", charset="UTF-8"'})
-
-
-@app.after_request
-def security_headers(resp):
-    # どの応答にも付ける安全のための指示
-    resp.headers["X-Content-Type-Options"] = "nosniff"     # ファイルの種類をブラウザに推測させない
-    resp.headers["X-Frame-Options"] = "DENY"               # ほかのサイトの中に埋め込ませない
-    resp.headers["Referrer-Policy"] = "no-referrer"        # ほかのサイトへ移るときにURLを伝えない
-    if request.path.startswith(("/api/", "/data/")) or request.path == "/":
-        resp.headers["Cache-Control"] = "no-store"         # 古い値や古い画面を使い回させない
-    return resp
 
 
 # ============================================================
@@ -139,45 +123,23 @@ def status(t):
 
 
 def parse_day(s):
-    # "2026-10-19" の形の日付を読む。形がおかしければ「見つかりません」（404）
+    # URLの ?day=2026-10-19 を日付に変換する。なければ今日、形がおかしければエラー（400）
+    if not s:
+        return datetime.now()
     try:
         return datetime.strptime(s, "%Y-%m-%d")
-    except (TypeError, ValueError):
-        abort(404)
-
-
-def record_days():
-    """記録のある日の一覧（"2026-10-19" のような名前のCSVだけを対象にする）"""
-    try:
-        names = os.listdir(LOG_DIR)
-    except OSError:
-        return []
-    return sorted(f[:-4] for f in names if f.endswith(".csv") and len(f) == len("2026-01-01.csv"))
+    except ValueError:
+        abort(400)
 
 
 # ============================================================
-# 画面と、画面が読むデータ
+# ページとAPI
 # ============================================================
 
 @app.route("/")
 def index():
-    # サイトの画面（index.html）を返す
-    return send_file(os.path.join(WEB_DIR, "index.html"))
-
-
-@app.route("/<name>")
-def static_file(name):
-    # グラフの部品・アイコンなど（STATIC_FILES の一覧にあるものだけ）
-    if name not in STATIC_FILES:
-        abort(404)
-    resp = send_from_directory(os.path.join(WEB_DIR, "static"), name)
-    # スマホにアプリとして認めてもらうため、設定ファイル（manifest）の種類を正しく伝える
-    if name == "manifest.webmanifest":
-        resp.headers["Content-Type"] = "application/manifest+json"
-    # サービスワーカーは、直したときにすぐ入れ替わるよう、保存させない
-    if name == "sw.js":
-        resp.headers["Cache-Control"] = "no-cache"
-    return resp
+    # サイトの画面（templates/index.html）を返す
+    return render_template("index.html", step=STEP_MIN)
 
 
 def latest_reading(rows, day):
@@ -194,38 +156,19 @@ def latest_reading(rows, day):
             "stale": (datetime.now() - ts) > timedelta(minutes=5)}
 
 
-@app.route("/data/latest.json")
-def data_latest():
-    # 画面が最初に（と1分ごとに）読むデータ
-    day = datetime.now()
-    latest = latest_reading(load(day), day)
-    if latest:
-        latest["time"] = latest["iso"]      # 画面では日付つきの形（iso）で使う
+@app.route("/api/data")
+def api_data():
+    # その日のグラフ用データと最新値を返す（ラズパイ内のサイトが1分ごとに読む）
+    day = parse_day(request.args.get("day"))
+    rows = load(day)
     return jsonify({
-        "latest": latest,
-        "days": record_days(),
-        # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報・高湿警報・高湿注意）
+        "day": day.strftime("%Y-%m-%d"),
+        "points": every_10min(rows),
+        "latest": latest_reading(rows, day),
+        # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報）
         "thresholds": alarm_settings.thresholds(),
         "location": alarm_settings.load()["location_name"],    # 設置場所の名前
     })
-
-
-@app.route("/data/<name>.json")
-def data_day(name):
-    # その日の10分ごとのデータ（グラフ用）。記録がなければ「見つかりません」（404）
-    day = parse_day(name)
-    if not os.path.exists(csv_path(day)):
-        abort(404)
-    return jsonify({"day": name, "points": every_10min(load(day))})
-
-
-@app.route("/data/<name>.csv")
-def data_csv(name):
-    # その日のCSVをファイルとしてダウンロードさせる。なければ「見つかりません」（404）
-    path = csv_path(parse_day(name))
-    if not os.path.exists(path):
-        abort(404)
-    return send_file(path, as_attachment=True, download_name=os.path.basename(path))
 
 
 def now_reading():
@@ -248,14 +191,24 @@ def now_reading():
 
 @app.route("/api/now")
 def api_now():
-    """現在値だけを返す（画面が5秒ごとに読む）"""
-    return jsonify({"latest": now_reading(), "location": alarm_settings.load()["location_name"]})
+    """現在値だけを返す。GitHub Pages のサイトから読むため、別サイトからの読み込みを許可する。"""
+    resp = jsonify({"latest": now_reading(), "location": alarm_settings.load()["location_name"]})
+    # 別のサイト（omoti12.github.io）のページから読めるようにする
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    # 古い値が使い回されないよう、ブラウザや途中の経路に保存させない
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # ============================================================
-# 警報メールの宛先・警報の設定の管理（画面の管理欄から使う）
+# 警報メールの宛先の管理（公開サイトの「警報メールの宛先」画面から使う）
 # ============================================================
 
+# 設定を変えたときに、公開サイトをすぐ更新するためのスクリプト
+PUBLISH_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pages", "publish.py")
+
+# 宛先の画面を置いているサイト。ほかのサイトからは使えないようにする
+ADMIN_ORIGIN = "https://omoti12.github.io"
 MAX_RECIPIENTS = 20         # 宛先の上限（いたずらで大量に登録されないように）
 # メールアドレスの形（○○@○○.○○）になっているかの確認
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
@@ -269,7 +222,7 @@ FAIL_LIMIT, FAIL_LIMIT_ALL, FAIL_WINDOW = 10, 50, 600
 
 
 def client_id():
-    """問い合わせてきた相手のIPアドレス。Tailscale 経由の問い合わせは tailscale serve が
+    """問い合わせてきた相手のIPアドレス。インターネットからの問い合わせは Tailscale Funnel が
     ラズパイの中（127.0.0.1）から中継してくるので、そのときは中継元が付ける X-Forwarded-For を使う。
     相手が自分で偽の X-Forwarded-For を付けてきても、中継元は本当の相手を最後に書き足すので、最後を使う"""
     addr = request.remote_addr or ""
@@ -279,8 +232,18 @@ def client_id():
     return addr
 
 
+def admin_cors(resp):
+    # 公開サイト（ADMIN_ORIGIN）のページからだけ、この窓口を使えるようにする
+    resp.headers["Access-Control-Allow-Origin"] = ADMIN_ORIGIN
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+    resp.headers["Vary"] = "Origin"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def admin_error(message, code):
-    return jsonify({"error": message}), code
+    return admin_cors(jsonify({"error": message})), code
 
 
 def check_admin():
@@ -309,15 +272,18 @@ def check_admin():
     return admin_error("パスワードが違います", 401)
 
 
-@app.route("/api/recipients", methods=["GET", "POST", "DELETE"])
+@app.route("/api/recipients", methods=["GET", "POST", "DELETE", "OPTIONS"])
 def api_recipients():
+    # ブラウザが本番の前に送ってくる確認（OPTIONS）には、使ってよい条件だけ返す
+    if request.method == "OPTIONS":
+        return admin_cors(Response(status=204))
     err = check_admin()
     if err:
         return err
 
     # 表示: 今の宛先の一覧を返す
     if request.method == "GET":
-        return jsonify({"recipients": alert_mail.get_recipients()})
+        return admin_cors(jsonify({"recipients": alert_mail.get_recipients()}))
 
     email = str((request.get_json(silent=True) or {}).get("email", "")).strip()
 
@@ -347,7 +313,7 @@ def api_recipients():
             notified = False
         # 動作ログにはアドレスを伏せ字で残す
         print(f"警報メールの宛先を追加: {alert_mail.mask(email)}", flush=True)
-        return jsonify({"recipients": lst, "notified": notified})
+        return admin_cors(jsonify({"recipients": lst, "notified": notified}))
 
     # 削除（最後の1件は消せない。消すと警報がどこにも届かなくなるため）
     def remove(lst):
@@ -361,25 +327,43 @@ def api_recipients():
     except ValueError as e:
         return admin_error(str(e), 400)
     print(f"警報メールの宛先を削除: {alert_mail.mask(email)}", flush=True)
-    return jsonify({"recipients": lst})
+    return admin_cors(jsonify({"recipients": lst}))
 
 
-@app.route("/api/settings", methods=["GET", "PUT"])
+@app.route("/api/settings", methods=["GET", "PUT", "OPTIONS"])
 def api_settings():
-    # 警報の設定（2段階の温度・湿度の基準・回復の幅・再通知の間隔・メールの一時停止・設置場所の名前など）
+    # 警報の設定（2段階の温度の基準・回復の幅・再通知の間隔・注意でもメールを送るか）
+    if request.method == "OPTIONS":
+        return admin_cors(Response(status=204))
     err = check_admin()
     if err:
         return err
     # 表示: 今の設定を返す
     if request.method == "GET":
-        return jsonify({"settings": alarm_settings.load()})
+        return admin_cors(jsonify({"settings": alarm_settings.load()}))
     # 変更: 確かめてから保存する（おかしな値なら理由を返す）
     try:
         s = alarm_settings.save(request.get_json(silent=True) or {})
     except ValueError as e:
         return admin_error(str(e), 400)
     print(f"警報の設定を変更: {s}", flush=True)
-    return jsonify({"settings": s})
+    # 公開サイトのグラフの線もすぐ変わるよう、裏で公開を1回実行する（終わるのは待たない）
+    try:
+        subprocess.Popen([sys.executable, PUBLISH_SCRIPT],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass    # 失敗しても、10分ごとの自動の公開で反映される
+    return admin_cors(jsonify({"settings": s}))
+
+
+@app.route("/download")
+def download():
+    # その日のCSVをファイルとしてダウンロードさせる。なければ「見つかりません」（404）
+    day = parse_day(request.args.get("day"))
+    path = csv_path(day)
+    if not os.path.exists(path):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=os.path.basename(path))
 
 
 # このファイルを直接実行したときの入口
@@ -387,7 +371,7 @@ def api_settings():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     try:
-        # 本番向けのサーバー waitress で動かす（無料）
+        # インターネットに出す窓口があるので、本番向けのサーバー waitress で動かす（無料）
         # 入れ方: sudo apt install python3-waitress
         from waitress import serve
         print(f"waitress で起動します（ポート {port}）", flush=True)

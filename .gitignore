@@ -1,9 +1,3 @@
 __pycache__/
 *.pyc
 mail.env
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-*.keystore
-*.jks

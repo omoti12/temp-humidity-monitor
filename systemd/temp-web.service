@@ -1,8 +1,8 @@
 # ============================================================
 # ラズパイ内のWebサイト（web/app.py）を常に動かし続けるための設定
-#   ・社内のネットワークからは http://raspberrypi.local:8000 で画面が見られる
-#   ・Tailscale の端末からは https://raspberrypi.tailfa1dcc.ts.net で見られる（tailscale serve で中継）
-#   ・インターネットには公開しない
+#   ・http://ラズパイのIP:8000 で画面が見られる
+#   ・現在値の窓口 /api/now も、このプログラムが提供している
+#     （公開サイトの現在値表示に必要。止まると公開サイトは10分ごとの表示になる）
 # よく使うコマンド
 #   状態を見る : systemctl status temp-web
 #   再起動する : sudo systemctl restart temp-web
