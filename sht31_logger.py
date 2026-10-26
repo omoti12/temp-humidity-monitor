@@ -111,7 +111,12 @@ def settings_text(s):
 # ============================================================
 
 def send_mail(subject, body):
-    """警報メールの宛先全員に送る。送信したらTrue、メール設定がなく送らなかったらFalseを返す。"""
+    """警報メールの宛先全員に送る。送信したらTrue、メール設定がなく送らなかったらFalseを返す。
+    設置場所の名前が登録されていれば、件名の頭と本文の最初に入れる（何か所もあるとき、どこの警報か分かるように）"""
+    name = alarm_settings.load()["location_name"]
+    if name:
+        subject = f"［{name}］{subject}"
+        body = f"設置場所: {name}\n{body}"
     return alert_mail.send(subject, body)
 
 

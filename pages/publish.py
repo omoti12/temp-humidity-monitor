@@ -147,6 +147,7 @@ def build():
         "days": days,
         # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報）
         "thresholds": alarm_settings.thresholds(),
+        "location": alarm_settings.load()["location_name"],    # 設置場所の名前
     })
 
 

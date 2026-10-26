@@ -35,6 +35,7 @@ DEFAULTS = {
     "sensor_fail_min": 5,   # センサーで測れない状態がこの分数続いたら【センサー異常】のメールを送る
     # 警報・注意・センサー異常のメールを止めている期限（1970年からの秒数）。0 = 止めていない、-1 = 再開するまで止める
     "mail_pause_until": 0,
+    "location_name": "",    # 設置場所の名前（サイトの一番上と、メールの件名に出す。空なら出さない）
 }
 
 # 湿度の状態の名前（数字が大きいほど高い）
@@ -79,6 +80,12 @@ def validate(new):
         hours = float(new["pause_hours"]) if "pause_hours" in new else None
     except (TypeError, ValueError):
         raise ValueError("数字で入力してください")
+    # 設置場所の名前（30文字まで。改行などの見えない文字は取り除く）
+    if "location_name" in new:
+        name = "".join(c for c in str(new["location_name"]) if c.isprintable()).strip()
+        if len(name) > 30:
+            raise ValueError("設置場所の名前は30文字までにしてください")
+        s["location_name"] = name
     # メールの一時停止: pause_hours = 何時間止めるか（0 = 再開する、-1 = 再開するまで止める）
     if hours is not None:
         if hours < 0:

@@ -45,6 +45,8 @@
   main { max-width: 1000px; margin: 0 auto; padding: 16px; }
   header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
   h1 { font-size: 1.3rem; margin: 0; }
+  /* 設置場所の名前（登録されているときだけ、見出しの横に出す） */
+  h1 .place { margin-left: .6em; color: var(--temp); }
   .updated { color: var(--muted); font-size: .85rem; }
   /* ---- 上の3つのカード（現在の温度・湿度・状態）---- */
   .now { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
@@ -110,7 +112,7 @@
 <main>
   <!-- 見出しと最終測定の時刻 -->
   <header>
-    <h1>温湿度モニター</h1>
+    <h1>温湿度モニター<span class="place" id="place"></span></h1>
     <span class="updated" id="updated"></span>
   </header>
 
@@ -188,6 +190,9 @@
         <label>回復の幅（℃）<input type="number" step="0.1" min="0" max="5" id="s_hysteresis" required></label>
         <label>再通知の間隔（分。0で再通知しない）<input type="number" step="1" min="0" max="1440" id="s_remind_min" required></label>
         <label>センサー異常を知らせるまで（分）<input type="number" step="1" min="1" max="1440" id="s_sensor_fail_min" required></label>
+      </div>
+      <div class="grid">
+        <label>設置場所の名前（サイトの一番上とメールの件名に出ます。30文字まで）<input type="text" maxlength="30" id="s_location_name" placeholder="例: 第1倉庫"></label>
       </div>
       <label class="check"><input type="checkbox" id="s_hum_enabled">湿度の警報を使う</label>
       <div class="grid">
@@ -342,6 +347,13 @@ function showHumStatus(hs) {
   $("humStatus").className = "substatus " + (hs || "");
 }
 
+// 設置場所の名前を見出しの横とブラウザのタブに出す（登録されていなければ出さない）
+function showPlace(name) {
+  if (name === undefined) return;
+  $("place").textContent = name || "";
+  document.title = name ? `温湿度モニター｜${name}` : "温湿度モニター";
+}
+
 // ラズパイの窓口から現在値を読む（5秒ごと）
 async function loadNow() {
   if (!NOW_URL) return;
@@ -350,6 +362,7 @@ async function loadNow() {
     const n = res.ok ? await res.json() : null;
     live = !!(n && n.latest);
     if (live) showLatest({ ...n.latest, time: n.latest.iso }, true);
+    if (n) showPlace(n.location);
   } catch (e) {
     live = false;   // ラズパイにつながらないときは10分ごとのデータを表示する
   }
@@ -370,6 +383,7 @@ async function load() {
 
   // ラズパイから直接読めていないときだけ、こちらの値を現在値として表示する
   if (d.latest && !live) showLatest(d.latest, false);
+  if (!live) showPlace(d.location);
 
   // データを 0:00〜23:50 の軸に並べる（記録がない時間は null = 空白）
   const byTime = Object.fromEntries(d.points.map((p) => [p.time, p]));
@@ -534,6 +548,8 @@ function renderSettings(st) {
   for (const k of SETTING_KEYS) $("s_" + k).value = st[k];
   $("s_mail_on_warn").checked = !!st.mail_on_warn;
   $("s_hum_enabled").checked = !!st.hum_enabled;
+  $("s_location_name").value = st.location_name || "";
+  showPlace(st.location_name || "");
   $("settingsForm").hidden = false;
 }
 
@@ -583,7 +599,8 @@ document.querySelectorAll("[data-pause]").forEach((b) => {
 // 「設定を保存」: 入力した設定をラズパイに保存する
 $("settingsForm").onsubmit = async (e) => {
   e.preventDefault();
-  const data = { mail_on_warn: $("s_mail_on_warn").checked, hum_enabled: $("s_hum_enabled").checked };
+  const data = { mail_on_warn: $("s_mail_on_warn").checked, hum_enabled: $("s_hum_enabled").checked,
+                 location_name: $("s_location_name").value };
   for (const k of SETTING_KEYS) data[k] = Number($("s_" + k).value);
   settingsMsg("保存中...");
   try {

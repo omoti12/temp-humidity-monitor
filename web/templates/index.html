@@ -42,6 +42,8 @@
   main { max-width: 1000px; margin: 0 auto; padding: 16px; }
   header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
   h1 { font-size: 1.3rem; margin: 0; }
+  /* 設置場所の名前（登録されているときだけ、見出しの横に出す） */
+  h1 .place { margin-left: .6em; color: var(--temp); }
   .updated { color: var(--muted); font-size: .85rem; }
   /* ---- 上の3つのカード（現在の温度・湿度・状態）---- */
   .now { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
@@ -86,7 +88,7 @@
 <main data-step="{{ step }}">
   <!-- 見出しと最終記録の時刻 -->
   <header>
-    <h1>温湿度モニター</h1>
+    <h1>温湿度モニター<span class="place" id="place"></span></h1>
     <span class="updated" id="updated"></span>
   </header>
 
@@ -243,6 +245,10 @@ async function load() {
   const d = await res.json();
 
   // 上の3つのカードと最終記録の時刻を書き換える（5分以上記録がなければ注意を出す）
+  // 設置場所の名前を見出しの横とブラウザのタブに出す（登録されていなければ出さない）
+  $("place").textContent = d.location || "";
+  document.title = d.location ? `温湿度モニター｜${d.location}` : "温湿度モニター";
+
   if (d.latest) {
     $("temp").innerHTML = `${d.latest.temp.toFixed(1)}<small>℃</small>`;
     $("hum").innerHTML = `${d.latest.hum.toFixed(1)}<small>%</small>`;

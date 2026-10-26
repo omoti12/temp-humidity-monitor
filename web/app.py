@@ -167,6 +167,7 @@ def api_data():
         "latest": latest_reading(rows, day),
         # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報）
         "thresholds": alarm_settings.thresholds(),
+        "location": alarm_settings.load()["location_name"],    # 設置場所の名前
     })
 
 
@@ -191,7 +192,7 @@ def now_reading():
 @app.route("/api/now")
 def api_now():
     """現在値だけを返す。GitHub Pages のサイトから読むため、別サイトからの読み込みを許可する。"""
-    resp = jsonify({"latest": now_reading()})
+    resp = jsonify({"latest": now_reading(), "location": alarm_settings.load()["location_name"]})
     # 別のサイト（omoti12.github.io）のページから読めるようにする
     resp.headers["Access-Control-Allow-Origin"] = "*"
     # 古い値が使い回されないよう、ブラウザや途中の経路に保存させない
