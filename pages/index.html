@@ -166,16 +166,16 @@
       <button type="submit">表示</button>
     </form>
 
-    <!-- 警報メールの一時停止（パスワードが正しいと表示される） -->
+    <!-- メールの一時停止（警報・注意・回復・センサー異常を全部止める。パスワードが正しいと表示される） -->
     <div id="pauseBox" hidden>
-      <h3 class="sub">警報メールの送信</h3>
+      <h3 class="sub">メールの送信（警報・注意・回復・センサー異常）</h3>
       <div class="pause-state" id="pauseState"></div>
       <div class="row">
         <button type="button" data-pause="1">1時間止める</button>
         <button type="button" data-pause="-1">再開するまで止める</button>
         <button type="button" data-pause="0">再開する</button>
       </div>
-      <div class="label" style="margin-top:6px">止めている間も、測定・記録・表示は続きます。再開したときに警報・注意が続いていれば、すぐメールで知らせます</div>
+      <div class="label" style="margin-top:6px">止めると、警報・注意・継続・回復・センサー異常のメールが全部止まります。止めている間も、測定・記録・表示は続きます。再開したときに警報・注意が続いていれば、すぐメールで知らせます</div>
       <p class="msg" id="pauseMsg"></p>
     </div>
 
@@ -583,7 +583,7 @@ $("pwForm").onsubmit = async (e) => {
 document.querySelectorAll("[data-pause]").forEach((b) => {
   b.onclick = async () => {
     const hours = Number(b.dataset.pause);
-    if (hours !== 0 && !confirm("警報・注意・センサー異常のメールを止めます。よろしいですか？")) return;
+    if (hours !== 0 && !confirm("警報・注意・継続・回復・センサー異常のメールを、全部止めます。よろしいですか？")) return;
     $("pauseMsg").textContent = "変更中...";
     $("pauseMsg").className = "msg";
     try {
