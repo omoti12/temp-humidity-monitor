@@ -13,6 +13,7 @@
 import json
 import os
 import threading
+import time
 
 # 設定ファイルの場所（alert_mail.py と同じフォルダ）。環境変数 CONFIG_DIR で変えられる
 CONFIG_DIR = os.environ.get("CONFIG_DIR", "/home/iot-user/.config/temp-monitor")
@@ -32,6 +33,8 @@ DEFAULTS = {
     "hum_warn": 65.0,       # この湿度以上で「高湿注意」
     "hum_hysteresis": 2.0,  # 湿度の回復と判断する幅（70%の警報なら68%以下に下がったら解除）
     "sensor_fail_min": 5,   # センサーで測れない状態がこの分数続いたら【センサー異常】のメールを送る
+    # 警報・注意・センサー異常のメールを止めている期限（1970年からの秒数）。0 = 止めていない、-1 = 再開するまで止める
+    "mail_pause_until": 0,
 }
 
 # 湿度の状態の名前（数字が大きいほど高い）
@@ -73,8 +76,19 @@ def validate(new):
         for k in ("mail_on_warn", "hum_enabled"):
             if k in new:
                 s[k] = bool(new[k])
+        hours = float(new["pause_hours"]) if "pause_hours" in new else None
     except (TypeError, ValueError):
         raise ValueError("数字で入力してください")
+    # メールの一時停止: pause_hours = 何時間止めるか（0 = 再開する、-1 = 再開するまで止める）
+    if hours is not None:
+        if hours < 0:
+            s["mail_pause_until"] = -1
+        elif hours == 0:
+            s["mail_pause_until"] = 0
+        elif hours <= 24 * 7:
+            s["mail_pause_until"] = time.time() + hours * 3600
+        else:
+            raise ValueError("メールを止める時間は1週間までにしてください")
     # センサー（SHT31）が測れる範囲は -40〜125℃
     for k in ("high_alarm", "high_warn", "low_warn", "low_alarm"):
         if not -40 <= s[k] <= 125:
@@ -151,6 +165,13 @@ def status(t, prev="正常", s=None):
             if t < s["low_alarm" if k == -2 else "low_warn"] + hyst:
                 return LEVELS[k]
     return LEVELS[raw]
+
+
+def mail_paused(s=None):
+    """警報・注意・センサー異常のメールを、今止めているか"""
+    s = s or load()
+    until = s.get("mail_pause_until", 0)
+    return until == -1 or (until > 0 and time.time() < until)
 
 
 def hum_status(h, prev="正常", s=None):

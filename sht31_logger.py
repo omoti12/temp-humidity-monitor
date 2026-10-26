@@ -127,6 +127,10 @@ class Alarm:
     def check(self, now, t, h, st, s=None):
         # 1分ごとに呼ばれる。送る必要があるときだけメールを送る
         s = s or alarm_settings.load()
+        # メールを止めている間は送らない。「知らせた状態」も変えないので、再開したときに
+        # まだ警報・注意が続いていれば、そのときにすぐ知らせる
+        if alarm_settings.mail_paused(s):
+            return
         # 「注意でもメールを送る」がオフのときは、注意の段階はメールの上では「正常」と同じに扱う
         level = st if (s["mail_on_warn"] or "注意" not in st) else "正常"
         # 警報・注意が続いていて、前回の送信から remind_min 分たったら再通知する
@@ -193,18 +197,18 @@ class SensorWatch:
         self.last_sent = 0.0        # 最後にメールを送った時刻（再通知の判断に使う）
         self.last_try = 0.0         # 最後にメールの送信を試した時刻
 
-    def ok(self, now):
+    def ok(self, now, s=None):
         # 測れたとき（5秒ごと）に呼ばれる
         self.last_ok = time.time()
         self.last_ok_dt = now
-        if self.notified and self._send("【回復】センサーの読み取りが戻りました",
+        if self.notified and not alarm_settings.mail_paused(s) and self._send("【回復】センサーの読み取りが戻りました",
                                         f"日時: {now:%Y-%m-%d %H:%M}\n温度・湿度の測定が再開しました。"):
             self.notified = False
 
     def failed(self, now, err, s):
         # 測れなかったとき（5秒ごと）に呼ばれる
         down_min = int((time.time() - self.last_ok) // 60)     # 測れていない時間（分）
-        if down_min < s["sensor_fail_min"]:
+        if down_min < s["sensor_fail_min"] or alarm_settings.mail_paused(s):
             return
         # すでに知らせていたら、再通知の間隔がたつまでは送らない
         if self.notified and not (s["remind_min"] > 0
@@ -279,6 +283,7 @@ def main():
     last_logged = None      # 最後にCSVへ記録した区切りの時刻
     sensor = SensorWatch()  # センサーで測れない状態が続いたら知らせる
     last_fail_log = 0.0     # 最後に「読み取り失敗」をログに書いた時刻（ログは1分に1回まで）
+    paused = False          # メールを止めているか（止めた・再開したときにログに書くため）
     bus = None              # I2Cの接続（開けなかったときは次の測定でもう一度開く）
     while True:
         now = datetime.now()
@@ -287,6 +292,9 @@ def main():
         if slot != settings_slot:
             s = alarm_settings.load()   # 設定を読み直す（画面で変えた設定がここで反映される）
             settings_slot = slot
+            if alarm_settings.mail_paused(s) != paused:
+                paused = not paused
+                print("警報メールを止めています" if paused else "警報メールを再開しました", flush=True)
         try:
             # I2Cのバス1番（ラズパイのGPIO2=SDA、GPIO3=SCL）を開いて、センサーを読む
             if bus is None:
@@ -300,7 +308,7 @@ def main():
             sensor.failed(now, e, s)
         else:
             last_fail_log = 0.0
-            sensor.ok(now)
+            sensor.ok(now, s)
             try:
                 if slot != last_logged:         # 毎分1回：記録と警報判定
                     st = status(t, st, s)

@@ -95,6 +95,8 @@
   .admin .grid input { flex: none; width: 100%; color: var(--text); }
   .admin .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: .9rem; }
   .admin .check input { flex: none; width: auto; }
+  .admin .pause-state { font-weight: 700; margin-top: 4px; }
+  .admin .pause-state.on { color: var(--ok); } .admin .pause-state.off { color: var(--warn); }
   /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
   @media (max-width: 600px) {
     .now { grid-template-columns: 1fr 1fr; }
@@ -161,6 +163,19 @@
       <input type="password" id="pw" placeholder="管理用パスワード" autocomplete="current-password">
       <button type="submit">表示</button>
     </form>
+
+    <!-- 警報メールの一時停止（パスワードが正しいと表示される） -->
+    <div id="pauseBox" hidden>
+      <h3 class="sub">警報メールの送信</h3>
+      <div class="pause-state" id="pauseState"></div>
+      <div class="row">
+        <button type="button" data-pause="1">1時間止める</button>
+        <button type="button" data-pause="-1">再開するまで止める</button>
+        <button type="button" data-pause="0">再開する</button>
+      </div>
+      <div class="label" style="margin-top:6px">止めている間も、測定・記録・表示は続きます。再開したときに警報・注意が続いていれば、すぐメールで知らせます</div>
+      <p class="msg" id="pauseMsg"></p>
+    </div>
 
     <!-- 警報の設定（パスワードが正しいと表示される） -->
     <form id="settingsForm" hidden>
@@ -498,8 +513,24 @@ function renderRecipients(list) {
   $("rcptsTitle").hidden = false;
 }
 
+// 警報メールを止めているかを表示する（mail_pause_until: 0 = 送信中、-1 = 再開するまで停止、それ以外 = その時刻まで停止）
+function renderPause(until) {
+  const now = Date.now() / 1000;
+  let text = "送信中", on = true;
+  if (until === -1) { text = "停止中（再開するまで止めています）"; on = false; }
+  else if (until > now) {
+    const t = new Date(until * 1000);
+    text = `停止中（${t.getMonth() + 1}/${t.getDate()} ${t.toTimeString().slice(0, 5)} まで止めています）`;
+    on = false;
+  }
+  $("pauseState").textContent = "今の状態：" + text;
+  $("pauseState").className = "pause-state " + (on ? "on" : "off");
+  $("pauseBox").hidden = false;
+}
+
 // 警報の設定を入力欄に入れる
 function renderSettings(st) {
+  renderPause(st.mail_pause_until);
   for (const k of SETTING_KEYS) $("s_" + k).value = st[k];
   $("s_mail_on_warn").checked = !!st.mail_on_warn;
   $("s_hum_enabled").checked = !!st.hum_enabled;
@@ -527,9 +558,27 @@ $("pwForm").onsubmit = async (e) => {
     $("addForm").hidden = true;
     $("rcptsTitle").hidden = true;
     $("settingsForm").hidden = true;
+    $("pauseBox").hidden = true;
     adminMsg(err.message, true);
   }
 };
+
+// 「1時間止める」「再開するまで止める」「再開する」: 警報メールを止める・再開する
+document.querySelectorAll("[data-pause]").forEach((b) => {
+  b.onclick = async () => {
+    const hours = Number(b.dataset.pause);
+    if (hours !== 0 && !confirm("警報・注意・センサー異常のメールを止めます。よろしいですか？")) return;
+    $("pauseMsg").textContent = "変更中...";
+    $("pauseMsg").className = "msg";
+    try {
+      renderPause((await adminCall("PUT", { pause_hours: hours }, SETTINGS_URL)).settings.mail_pause_until);
+      $("pauseMsg").textContent = hours === 0 ? "再開しました（1分以内に反映されます）" : "止めました（1分以内に反映されます）";
+    } catch (err) {
+      $("pauseMsg").textContent = err.message;
+      $("pauseMsg").className = "msg error";
+    }
+  };
+});
 
 // 「設定を保存」: 入力した設定をラズパイに保存する
 $("settingsForm").onsubmit = async (e) => {
