@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>測り方と仕組み｜温湿度モニター</title>
+<!--
+  ============================================================
+  このページの役割
+    各センサーが「何を・どうつないで・どこで何に変換して」サイトの数字になっているかをまとめた説明ページ。
+    公開サイト（index.html）の「測り方・仕組み」から開く。中身は固定の文章（データは読まない）
+    配線や設定を変えたら、このページも書き直す
+  ============================================================
+-->
+<style>
+  /* ---- 色の設定（index.html と同じ色）---- */
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
+    --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c;
+    --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e; --code: #f1f3f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
+      --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b;
+      --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a; --code: #262a33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.7;
+         font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  h2 { font-size: 1.1rem; margin: 32px 0 10px; padding-left: 10px; border-left: 4px solid var(--temp); }
+  h3 { font-size: 1rem; margin: 0 0 6px; }
+  a { color: var(--hum); }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  /* 目次 */
+  .toc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .9rem; }
+  /* センサーごとの色の印 */
+  .tag { display: inline-block; font-size: .75rem; font-weight: 700; padding: 1px 8px; border-radius: 99px;
+         border: 1px solid currentColor; margin-left: 6px; vertical-align: 2px; }
+  .sht { color: var(--temp); } .thd { color: var(--cmp); } .pt { color: var(--pt); }
+  .ktc { color: var(--ktc); }
+  /* 測ってから数字になるまでの流れ（左から右へ。狭い画面では上から下へ） */
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 10px 0 4px; overflow: hidden; }
+  .step { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+          padding: 8px 10px; font-size: .85rem; line-height: 1.5; }
+  .step b { display: block; font-size: .9rem; }
+  .step .v { display: block; margin-top: 4px; font-weight: 700; color: var(--warn); font-variant-numeric: tabular-nums; }
+  .arrow { flex: none; align-self: center; width: 22px; text-align: center; color: var(--muted); }
+  .arrow::before { content: "→"; }
+  @media (max-width: 700px) {
+    .flow { flex-direction: column; }
+    .arrow { width: auto; }
+    .arrow::before { content: "↓"; }
+  }
+  /* 表 */
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; }
+  code, .formula { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .85rem;
+                   background: var(--code); border-radius: 6px; padding: 1px 6px; }
+  .formula { display: block; padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* コマンド・設定ファイルの中身（長い行は横にスクロール） */
+  pre.code { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .8rem; line-height: 1.5;
+             background: var(--code); border-radius: 8px; padding: 10px 12px; margin: 6px 0 10px; overflow-x: auto; }
+  /* 重ね方の図（下から順に積む） */
+  .stack { display: flex; flex-direction: column-reverse; gap: 4px; max-width: 460px; margin: 8px 0; }
+  .stack div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); font-size: .88rem; }
+  .stack .pin { border-style: dashed; color: var(--muted); }
+  .ok { color: var(--ok); font-weight: 700; }
+  ul { margin: 6px 0; padding-left: 1.3em; }
+  li { margin: 2px 0; }
+  /* 確認がまだのところ */
+  .check { color: var(--warn); font-weight: 700; font-size: .8rem; }
+  footer { margin: 32px 0 16px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>測り方と仕組み</h1>
+    <a href="./">← 温湿度モニターに戻る</a>
+  </header>
+  <p class="muted">各センサーが、何をどうつないで、どこで何に変換されて、サイトの数字になっているかのまとめ。</p>
+
+  <nav class="card toc">
+    <a href="#overview">全体の流れ</a>
+    <a href="#sht31">SHT31</a>
+    <a href="#pt100">Pt100</a>
+    <a href="#ktc">K型熱電対</a>
+    <a href="#thdrc">THD-R-C</a>
+    <a href="#accel">加速度センサー</a>
+    <a href="#cpiras">電源と時計（CPI-RAS）</a>
+    <a href="#power">電圧・電流のまとめ</a>
+    <a href="#pi">ラズパイの中の処理</a>
+    <a href="#site">サイトに出るまで</a>
+    <a href="#dew">露点温度の出し方</a>
+  </nav>
+
+  <!-- ============================================================ -->
+  <h2 id="overview">全体の流れ</h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>センサー</b>温度・湿度を、電気の量（抵抗・電圧・電流）やデジタルの数字に変える</div>
+      <div class="arrow"></div>
+      <div class="step"><b>変換器</b>電気の量を読み取り、ラズパイが読める形（デジタル）にする</div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>℃・% に計算 → 補正を足す → SDカードに1分ごとに記録</div>
+      <div class="arrow"></div>
+      <div class="step"><b>サイト</b>現在値は5秒ごと、グラフは10分ごとに更新</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>センサー</th><th>測るもの</th><th>センサーが出すもの</th><th>変換器・つなぎ方</th><th>役割</th></tr>
+        <tr><td><span class="tag sht">SHT31</span></td><td>温度・湿度</td><td>デジタルの数字（I2C）</td><td>ラズパイに直接（線4本）</td><td>メインのセンサー。警報メールの判定に使う</td></tr>
+        <tr><td><span class="tag pt">Pt100</span></td><td>温度</td><td>抵抗（0℃で100Ω）</td><td>Y2Kb の Pt100 モジュール → USB</td><td>比較用</td></tr>
+        <tr><td><span class="tag ktc">K型熱電対</span></td><td>温度</td><td>ごく小さい電圧（1℃で約0.04mV）</td><td>Y2Kb の K型熱電対モジュール → USB</td><td>比較用</td></tr>
+        <tr><td><span class="tag thd">THD-R-C</span></td><td>温度・湿度</td><td>電流 4〜20mA</td><td>150Ωの抵抗 → RPi-GP40T（電圧を測る基板）</td><td>比較用（つないでいるときだけ）</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="sht31">SHT31（温湿度センサー）<span class="tag sht">メイン</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>SHT31 の中</b>温度と湿度を測り、センサーの中で 0〜65535 の数字に変換<span class="v">デジタル 16ビット</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>I2C（線4本）</b>ラズパイが「測って」と命令し、数字を受け取る<span class="v">電源・信号とも 3.3V</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>数字を ℃・% に計算し、壊れていないか確認（CRC）<span class="v">5秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>記録</b>補正を足して、1分ごとにSDカードへ。警報の判定もここ<span class="v">1分ごと</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>センサー：Adafruit SHT31-D（基板の上に SHT31 が載ったもの）</li>
+      <li>ラズパイのピン → ブレッドボード → SHT31-D の4本（線の色は今の配線）
+        <ul>
+          <li>緑：1番ピン（3.3V）→ ブレッドボードの ＋ の列 → SHT31-D の VIN</li>
+          <li>茶：6番ピン（GND）→ ブレッドボードの － の列 → SHT31-D の GND</li>
+          <li>紫：3番ピン（GPIO2 = SDA、データ）→ SHT31-D の SDA</li>
+          <li>青：5番ピン（GPIO3 = SCL、時計の合図）→ SHT31-D の SCL</li>
+        </ul></li>
+      <li>電源：ラズパイの <b>3.3V</b>（SHT31-D は 2.5〜5.5V で動く）</li>
+      <li>ADDR ピンを VIN につないで、I2C の番号（アドレス）を <code>0x45</code> にしている</li>
+    </ul>
+    <h3>数字の計算（データシートの式）</h3>
+    <span class="formula">温度[℃] = -45 + 175 × 温度の数字 ÷ 65535
+湿度[%] = 100 × 湿度の数字 ÷ 65535</span>
+    <ul>
+      <li>例：温度の数字が 26214 なら -45 + 175 × 26214 ÷ 65535 = 25.0℃</li>
+      <li>測るたびに「高精度・1回測定」の命令を送る。読み間違いは CRC（検査用の数字）で見つけて捨てる</li>
+      <li>管理欄の「補正」の数を足してから記録・判定する（例：-0.5 なら 0.5℃ 下げる）</li>
+      <li>SDカードの記録は、その1分の区切りで測った値（平均ではない）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="pt100">Pt100（白金測温抵抗体）<span class="tag pt">比較用</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>Pt100</b>白金の線。温度で抵抗が変わる<span class="v">0℃で100Ω、1℃で約0.385Ω増える</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>Y2Kb Pt100 モジュール</b>小さい一定の電流を流して電圧を測り、抵抗 → 温度に変換<span class="v">温度の文字にして送る</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>USB</b>USBシリアル（CH341）で文字を送る<span class="v">10秒ごと・921600bps</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>「現在,平均,最大,最小」の行から現在の温度を取り出し、補正を足して記録<span class="v">1分ごと</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>Pt100 の線 → Y2Kb の Pt100 温度測定モジュール（Y2KB-046）→ USB ケーブル → ラズパイ</li>
+      <li>モジュールは Pt100 の2線式・3線式・4線式のどれでもつなげる。USB のほかに RS-485（Modbus）・Grove（I2C）でも読める</li>
+      <li>モジュールの電源は USB から（5V）</li>
+      <li>差し込み口：ラズパイの <b>hcd.0</b> 側（最初から差していた方）。K型熱電対と逆に差すと名前が入れ替わる</li>
+      <li>USB ケーブルはデータ通信できるものが必要（充電専用だとランプは点くが認識されない）</li>
+    </ul>
+    <h3>数字の考え方</h3>
+    <span class="formula">抵抗[Ω] ≒ 100 × (1 + 0.00385 × 温度[℃])   （JIS / IEC の Pt100）
+例：25℃ → 約109.6Ω、0℃ → 100Ω</span>
+    <ul>
+      <li>温度への変換はモジュールの中で行い、ラズパイは送られてきた温度の文字をそのまま使う</li>
+      <li>-50〜200℃ を外れた値は、断線などの疑いとして記録しない</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="ktc">K型熱電対<span class="tag ktc">比較用</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>K型熱電対</b>2種類の金属（クロメル・アルメル）の先端の温度差で電圧が出る<span class="v">1℃の差で約0.041mV</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>Y2Kb K型熱電対モジュール</b>ごく小さい電圧を測り、つなぎ目側の温度（冷接点）を足して温度に変換<span class="v">温度の文字にして送る</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>USB</b>Pt100 と同じ形で文字を送る<span class="v">10秒ごと・921600bps</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>Pt100 と同じプログラムを「ktc」の名前で動かして記録<span class="v">1分ごと</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>K型熱電対 → Y2Kb の K型熱電対モジュール → USB ケーブル → ラズパイ</li>
+      <li>モジュールの電源は USB から（5V）</li>
+      <li>差し込み口：ラズパイの <b>hcd.1</b> 側（あとから差した方）</li>
+    </ul>
+    <h3>数字の考え方</h3>
+    <span class="formula">出る電圧 ≒ 0.041mV × (先端の温度 − つなぎ目の温度)
+例：先端 25℃・つなぎ目 20℃ → 約0.2mV。モジュールがつなぎ目の温度を測って足し、先端の温度を出す</span>
+    <ul>
+      <li>電圧がとても小さいので、線を長くしたり、ノイズの多い電線の近くを通したりすると値がふらつきやすい</li>
+      <li>-200〜1300℃ を外れた値は、断線などの疑いとして記録しない</li>
+      <li>指で先端をつまむとすぐ温度が上がる（どちらのモジュールか確かめるときに使える）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="thdrc">THD-R-C（4〜20mA 温湿度センサー）<span class="tag thd">比較用</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>THD-R-C</b>温度・湿度を電流で出す（2本）<span class="v">4〜20mA</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>150Ω の抵抗</b>電流を電圧に変える<span class="v">0.6〜3.0V</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>RPi-GP40T</b>電圧を 0〜4095 の数字に変える（1目盛り 1.25mV）<span class="v">SPI でラズパイへ</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>電圧 → 電流 → ℃・% に計算し、補正を足して記録<span class="v">5秒ごと（記録は1分ごと）</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>温度：THD-R-C の A → GP40T の A0。A0 と G0 のあいだに 150Ω</li>
+      <li>湿度：THD-R-C の B → GP40T の A1。A1 と G1 のあいだに 150Ω</li>
+      <li>G0・G1 は THD-R-C の電源の −（GND）へ</li>
+      <li>THD-R-C の電源：<b>DC 24V</b>。ACアダプター（bitstrong BS-ACDC-2420。入力 AC100〜240V、出力 DC24.0V 2.0A（48W）、PSE マーク付き、プラグ 外径5.5mm・内径2.1mm、極性はセンタープラス＝プラグの中心が＋）→ パワーコネクター（2芯の電源用コネクター。プラグを＋と－の線に分ける）→ THD-R-C の電源の＋・－。この 24V はラズパイの電源（CPI-RAS）と共用している（<a href="#cpiras">電源と時計</a>）</li>
+      <li>4〜20mA の電流は、24V の電源 → THD-R-C → 150Ω の抵抗 → 電源の －（GND）と、ひと回りして流れる</li>
+      <li>GP40T は、ラズパイ → CPI-RAS → GP40T の順に重ねた一番上の基板。ラズパイとは電気的に分けた（絶縁した）電源で動く（GPIO27 で電源を入れる）</li>
+    </ul>
+    <h3>150Ω の抵抗を入れている理由</h3>
+    <span class="formula">電流の通り道：24V（＋）→ THD-R-C → 出力 A → GP40T の A0 → 150Ω → GP40T の G0 → 24V（－）
+GP40T は 150Ω の両端（A0 と G0 のあいだ）の電圧を測る。湿度（B → A1 → 150Ω → G1）も同じ形</span>
+    <ul>
+      <li>THD-R-C は温度・湿度を<b>電流</b>（4〜20mA）で出すが、GP40T が測れるのは<b>電圧</b>だけ。そこで抵抗に電流を流し、抵抗の両端に出る電圧を測る</li>
+      <li>電圧 = 電流 × 抵抗：4mA × 150Ω = <b>0.6V</b>、12mA × 150Ω = <b>1.8V</b>、20mA × 150Ω = <b>3.0V</b></li>
+      <li>150Ω にしているのは、いちばん大きい 20mA でも 3.0V で、GP40T の 0〜5V の範囲に余裕をもって収まるため</li>
+      <li>温度用と湿度用で1本ずつ、合わせて2本。A0–G0 のあいだと A1–G1 のあいだに入れる</li>
+      <li>抵抗で使われる電力は最大でも 20mA × 3.0V = 0.06W と小さく、ふつうの 1/4W の抵抗で足りる（熱くならない）</li>
+      <li>抵抗の値がずれると、そのまま測った値がずれる（例：抵抗が 1% 大きいと、電流も 1% 大きく計算される）。精度のよい抵抗を使うほど正確になる</li>
+    </ul>
+    <h3>数字の計算</h3>
+    <span class="formula">電圧[V] = GP40T の数字 × 1.25mV
+電流[mA] = 電圧[V] ÷ 150Ω × 1000
+温度[℃] = -19.9 + (電流 − 4) ÷ 16 × 79.9   （4mA = -19.9℃、20mA = 60.0℃）
+湿度[%]  = (電流 − 4) ÷ 16 × 99.9          （4mA = 0%、20mA = 99.9%）</span>
+    <ul>
+      <li>例：温度側が 1.32V → 8.8mA → -19.9 + 4.8 ÷ 16 × 79.9 = 4.1℃</li>
+      <li>3.6〜20.5mA を外れたら、断線・故障の疑いとして記録しない</li>
+      <li>GP40T は 0〜5V のレンジで使う（実際は 0〜5.12V まで測れる）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="accel">加速度センサー<span class="tag" style="color:var(--muted)">記録・表示</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>加速度センサー</b>X・Y・Z の傾き・揺れを電圧で出す<span class="v">0g = 1.65V、1g で 0.66V 変わる</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>MCP3004</b>電圧を 0〜1023 の数字に変える（Ch0 = X、Ch1 = Y、Ch2 = Z）<span class="v">基準 3.3V</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>SPI1</b>ラズパイの2つ目の SPI で読む（GP40T の SPI0 とは別の線）<span class="v">0.1秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>数字 → 電圧 → g に計算して記録<span class="v">今の値は1秒・記録は1分ごと</span></div>
+    </div>
+    <h3>つなぎ方（ラズパイにつなぐのは4本）</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>線</th><th>MCP3004 の足</th><th>ラズパイのピン</th><th>基板の「39」の印を上にして見たとき</th></tr>
+        <tr><td>緑</td><td>CLK（時計の合図）</td><td>40番（SPI1 SCLK）</td><td>上から1番目・ふち側の列</td></tr>
+        <tr><td>オレンジ</td><td>DIN（ラズパイ → MCP3004）</td><td>38番（SPI1 MOSI）</td><td>上から2番目・ふち側の列</td></tr>
+        <tr><td>黄</td><td>DOUT（MCP3004 → ラズパイ）</td><td>35番（SPI1 MISO）</td><td>上から3番目・内側の列</td></tr>
+        <tr><td>茶</td><td>CS（呼び出しの合図）</td><td>11番（GPIO17。プログラムで Low・High にする）</td><td>下から6番目（1・2番の側から6段目）・内側の列</td></tr>
+      </table>
+    </div>
+    <ul>
+      <li>MCP3004 と加速度センサーの 3.3V・GND は、SHT31 と同じブレッドボードの ＋・－ の列からもらう</li>
+      <li>GP40T（THD-R-C）が使う SPI0 とは別の線（SPI1）なので、THD-R-C の記録と同時に使える</li>
+      <li>CS は SPI1 の決まったピン（12番）ではなく 11番を使い、読むたびにプログラムが Low（呼び出す）・High（終わり）にする。12番では MCP3004 に合図が届かなかったため</li>
+      <li>読む速さは 100kHz（ゆっくり）で、ch ごとに2回読んで2回目を使う。加速度センサーの出力は電気が弱いので、速く読むと正しい電圧になる前に読んでしまうおそれがあるため（念のための対策）</li>
+      <li>最初は平らに置いても X・Y・Z がばらばらの値（約 +2.45G・+1.22G・−1.71G）になっていた。原因は加速度センサーの不良で、センサーを交換したら正しい値（約 0G・0G・+1G）になった</li>
+      <li>準備として <code>/boot/firmware/config.txt</code> に <code>dtoverlay=spi1-1cs</code> を書く（再起動なしで使うときは <code>sudo dtoverlay spi1-1cs</code>）</li>
+    </ul>
+    <h3>数字の計算</h3>
+    <p class="muted" style="margin:0">G は重力加速度（1G = 地球の重力の強さ、約9.8m/s²）。重さのグラム（g）ではない。</p>
+    <span class="formula">電圧[V] = MCP3004 の数字 ÷ 1023 × 3.3V
+加速度[g] = (電圧 − 1.65V) ÷ 0.66V
+揺れ[g]   = |√(X² + Y² + Z²) − 1|   （止まっていれば 0 に近い。1分間・10分間で一番大きかった値を残す）</span>
+    <ul>
+      <li>平らに置くと Z が約 1g（地球の重力）、X・Y が約 0g</li>
+      <li>換算は、3.3V で使うアナログの加速度センサー（KXR94-2050 など）の値</li>
+      <li>記録（CSV）：1分ごとに X・Y・Z の平均と、その1分の揺れの最大。<code>templog/accel/日付.csv</code></li>
+      <li>サイト：湿度のグラフの下に「加速度」の欄が出る（加速度センサーを動かしているときだけ）。右上に今の値（5秒ごと）、グラフは10分ごとの平均と揺れの最大</li>
+      <li>今の値の揺れは「直近5秒間の最大」。サイトは5秒ごとに読むので、そのあいだに起きた短い揺れ（たたいた、など）も見逃さない</li>
+    </ul>
+    <h3>基準（今置いている位置を「正しい位置」にする）</h3>
+<pre class="code"># 基準を決める（5秒間はかって平均する。そのあいだはさわらない）
+python3 ~/temp-monitor/accel_base.py
+
+# 基準をやめる
+python3 ~/temp-monitor/accel_base.py --clear</pre>
+    <ul>
+      <li>今の置き方での X・Y・Z を <code>~/.config/temp-monitor/accel_base.json</code> に保存する。記録のプログラムは1分ごとに読み直すので、再起動はいらない</li>
+      <li>基準を決めると、サイトの X・Y・Z は「基準からの変化」になり、「傾き」（基準の向きから何度傾いたか）も出る。置いたままなら、どれも 0 に近い</li>
+      <li>傾き[度] = 基準の向きと今の向き（X・Y・Z の矢印）のあいだの角度。記録（CSV）には「傾き(度)」の列として残る。X・Y・Z は測ったままの値を残す</li>
+      <li>止めて置いた状態で、加速度の大きさが 1g から大きく外れているとき（配線の問題などで読めていないとき）は、基準にしない</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="cpiras">電源と時計（CPI-RAS）</h2>
+  <div class="card">
+    <p style="margin-top:0">CPI-RAS は、ラズパイと RPi-GP40T のあいだに重ねる基板。<b>24V の電源からラズパイを動かす</b>ことと、
+      <b>電源が切れても時刻を覚えている時計（RTC）</b>の2つの役目をしている。
+      これで、THD-R-C と同じ 24V の ACアダプター1つでラズパイも動き、ネットにつながっていなくても正しい時刻で記録できる。</p>
+
+    <h3>重ね方（下から順に）</h3>
+    <div class="stack">
+      <div><b>Raspberry Pi 5</b></div>
+      <div><b>CPI-RAS</b>（DIPスイッチ SW2 は全部 OFF のまま）</div>
+      <div class="pin">40ピンのピンヘッダ（CPI-RAS の上の穴と、RPi-GP40T の裏の穴をつなぐ）</div>
+      <div><b>RPi-GP40T</b>（THD-R-C を読む基板）</div>
+    </div>
+    <p class="muted" style="margin:0">（図は上ほど上の段）</p>
+    <ul>
+      <li>CPI-RAS と RPi-GP40T は、使うピンがぶつからないので、重ねてそのまま両方使える</li>
+    </ul>
+
+    <h3>24V 電源の配線</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>変換コネクター（NSK）</th><th>線の色</th><th>CPI-RAS の電源端子（CN1）</th></tr>
+        <tr><td>左のネジ（⊕）</td><td>黄</td><td>3番：V＋</td></tr>
+        <tr><td>右のネジ（⊖）</td><td>青</td><td>2番：V−</td></tr>
+        <tr><td>―</td><td>―</td><td>1番：FG（空き）</td></tr>
+      </table>
+    </div>
+    <ul>
+      <li>24V は THD-R-C と同じ ACアダプター（BS-ACDC-2420、24V 2.0A）を共用している</li>
+      <li>ラズパイの USB-C には何も挿さない（電源は CPI-RAS から 40ピンを通して送られる）</li>
+    </ul>
+
+    <h3>動作確認</h3>
+<pre class="code"># CPI-RAS が見えるか確認（2c と 32 が出れば OK。32 が時計）
+sudo i2cdetect -y 1
+
+# 「GPIO busy」の原因を調べる（GPIO を使っているプログラムの一覧）
+gpioinfo | grep consumer
+ps aux | grep -v grep | grep python
+
+# 動いている記録サービスと、THD-R-C の最新の記録を確認
+systemctl list-units | grep -i -E &quot;thd|sht|monitor&quot;
+journalctl -u thdrc-logger -n 5 --no-pager</pre>
+    <ul>
+      <li>I2C で CPI-RAS の <code>2c</code> と <code>32</code>（時計）が見えた</li>
+      <li>RPi-GP40T のサンプル（sampleGp40_RPi5.py）が「GPIO busy」になったのは、記録サービス（thdrc-logger）がすでに GP40T を使っていたため。
+        THD-R-C は正常に記録できていた（故障ではない）</li>
+    </ul>
+
+    <h3>CPI-RAS の時計を使えるようにする</h3>
+    <p style="margin:0">ラズパイ5 本体の時計（rtc0）は、電池をつけていないと電源を抜いたときに止まる。そこで CPI-RAS の時計（rtc1）を使う。
+      CPI-RAS の時計は RX8900 という部品で、ラズパイに入っている rtc-rv8803 のドライバーで動く。</p>
+<pre class="code"># 時計のドライバーがラズパイに入っているか確認
+modinfo rtc-rv8803 | head -3
+
+# 時計を登録する（I2C の 32 番の部品を RX8900 として登録）
+sudo modprobe rtc-rv8803
+echo rx8900 0x32 | sudo tee /sys/bus/i2c/devices/i2c-1/new_device
+cat /sys/class/rtc/rtc*/name     # rtc0 = ラズパイ5 本体、rtc1 = CPI-RAS
+
+# ネットで時刻が合っているか確認（synchronized: yes なら OK）
+timedatectl
+
+# hwclock コマンドを入れる
+sudo apt install -y util-linux-extra
+
+# CPI-RAS の時計に今の時刻を書き込み、読み出して確認
+sudo hwclock -w -f /dev/rtc1
+sudo hwclock -r -f /dev/rtc1</pre>
+
+    <h3>時計のしくみ</h3>
+    <p style="margin:0"><b>1. 時計はずっと動いている</b></p>
+    <ul>
+      <li>CPI-RAS の時計は、ボタン電池（CR2032）で動いている</li>
+      <li>ラズパイの電源が切れていても、コンセントが抜けていても、時刻を刻み続ける</li>
+    </ul>
+    <p style="margin:6px 0 0"><b>2. 電源を入れたときの時刻</b></p>
+    <div class="table-wrap">
+      <table>
+        <tr><th></th><th>電源を入れた直後の時刻</th><th>記録への影響</th></tr>
+        <tr><td><b>設定する前</b></td><td>「最後に電源が切れたときの時刻」から動き始めていた</td>
+          <td>ネットで時刻が合うまでの記録は、ずれた時刻になっていた（今朝の「09:10」がそれ）。ネットがない場所なら、ずっとずれたままだった</td></tr>
+        <tr><td><b>設定したあと</b></td><td>記録のプログラムが動き出す前に、CPI-RAS の時計から正しい時刻を読み込む</td>
+          <td class="ok">1件目の記録から正しい時刻になる。ネットがない場所でも同じ</td></tr>
+      </table>
+    </div>
+    <p style="margin:6px 0 0"><b>補足</b></p>
+    <ul>
+      <li><b>ずれの修正</b>：ネットにつながっているあいだは、1時間ごとに CPI-RAS の時計も正しい時刻に合わせ直す。
+        ネットがない場所でも、CPI-RAS の時計は温度の補正が付いているので、ずれは小さく済む</li>
+      <li><b>ボタン電池の交換</b>：マニュアルでは、電池交換は「修理扱い（販売店か CONTEC に依頼）」となっている。<b>自分で交換しない</b></li>
+    </ul>
+
+    <h3>時計の電圧・電流</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>場所</th><th>大きさ</th><th>メモ</th></tr>
+        <tr><td>ボタン電池（CR2032）</td><td class="num">3V</td><td>リチウム電池。容量は 約220mAh（CR2032 の一般的な値）</td></tr>
+        <tr><td>時計の部品（RX8900）が使う電流</td><td class="num">約0.7µA</td><td>時刻を刻むだけのときの代表値（部品のデータシートの値。1µA = 0.001mA）</td></tr>
+        <tr><td>ラズパイとのやり取り（I2C）</td><td class="num">3.3V</td><td>ラズパイの 3番・5番ピン（SDA・SCL）。SHT31 と同じ線に、32番として並んでいる</td></tr>
+      </table>
+    </div>
+    <ul>
+      <li>ラズパイが動いているあいだは基板の電源で動き、電源が切れると電池に切り替わる（電池で時計を動かす一般的なしくみ。くわしい回路はマニュアルで確認）</li>
+      <li>電池の持ち：220mAh ÷ 0.0007mA ≒ 31万時間（計算上は何十年分）。実際は電池が自然に減る分などで短くなるので、交換の目安はマニュアルで確認する</li>
+      <li>時計が使う電気はとても小さいので、24V の電源や、ほかのセンサーの電気にはほとんど影響しない</li>
+    </ul>
+
+    <h3>自動で動くようにする</h3>
+    <div class="flow">
+      <div class="step"><b>電源を入れる</b>ラズパイの時刻は、前に止まったときのまま（ずれている）</div>
+      <div class="arrow"></div>
+      <div class="step"><b>cpi-rtc-load</b>CPI-RAS の時計を登録し、その時刻をラズパイに読み込む<span class="v">起動時に1回</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>記録が始まる</b>1行目から正しい時刻で記録される</div>
+      <div class="arrow"></div>
+      <div class="step"><b>cpi-rtc-save</b>ネットで時刻が合っていれば、その時刻を CPI-RAS の時計に書き込む<span class="v">1時間ごと</span></div>
+    </div>
+    <ul>
+      <li>CPI-RAS の時計を、ネットで合わせた時刻で1時間ごとに直すので、時計のずれがたまらない</li>
+      <li>ネットで時刻が合っていないとき（ネットなしで起動したときなど）は書き込まない。ずれた時刻で CPI-RAS の時計を上書きしないため</li>
+      <li>時計の登録は電源を入れるたびに消えるので、起動のたびに cpi-rtc-load で登録し直している</li>
+    </ul>
+    <p style="margin:6px 0 0"><b>① 起動時に CPI-RAS の時計から時刻を読み込むプログラム</b>（<code>/usr/local/sbin/cpi-rtc-load.sh</code>）</p>
+    <p class="muted" style="margin:0">時計のドライバーを読み込み → 時計を登録（まだなら）→ 時計が見えるまで最大10秒待つ → その時刻をラズパイに読み込む</p>
+<pre class="code">#!/bin/bash
+modprobe rtc-rv8803
+[ -e /sys/bus/i2c/devices/1-0032 ] || echo rx8900 0x32 &gt; /sys/bus/i2c/devices/i2c-1/new_device
+for i in $(seq 1 20); do
+  F=$(grep -l rv8803 /sys/class/rtc/rtc*/name 2&gt;/dev/null | head -1)
+  [ -n &quot;$F&quot; ] &amp;&amp; break
+  sleep 0.5
+done
+[ -n &quot;$F&quot; ] &amp;&amp; hwclock -s -f /dev/$(basename $(dirname $F))</pre>
+    <p style="margin:6px 0 0"><b>② ネットで合わせた時刻を CPI-RAS の時計に書き込むプログラム</b>（<code>/usr/local/sbin/cpi-rtc-save.sh</code>）</p>
+    <p class="muted" style="margin:0">ネットで時刻が合っているときだけ → CPI-RAS の時計を探して → 今の時刻を書き込む</p>
+<pre class="code">#!/bin/bash
+[ &quot;$(timedatectl show -p NTPSynchronized --value)&quot; = &quot;yes&quot; ] || exit 0
+F=$(grep -l rv8803 /sys/class/rtc/rtc*/name 2&gt;/dev/null | head -1)
+[ -n &quot;$F&quot; ] &amp;&amp; hwclock -w -f /dev/$(basename $(dirname $F))</pre>
+    <p style="margin:6px 0 0"><b>③ 起動時に①を動かす設定</b>（<code>/etc/systemd/system/cpi-rtc-load.service</code>）</p>
+    <p class="muted" style="margin:0">ネットでの時刻合わせ（time-sync）や、記録のプログラムより前に動かす</p>
+<pre class="code">[Unit]
+Description=Load time from CPI-RAS RTC
+DefaultDependencies=no
+After=systemd-modules-load.service local-fs.target
+Before=time-sync.target sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cpi-rtc-load.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target</pre>
+    <p style="margin:6px 0 0"><b>④ 1時間ごとに②を動かす設定</b>（<code>/etc/systemd/system/cpi-rtc-save.service</code> と <code>cpi-rtc-save.timer</code>）</p>
+<pre class="code">[Unit]
+Description=Save system time to CPI-RAS RTC
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cpi-rtc-save.sh</pre>
+<pre class="code">[Unit]
+Description=Save time to CPI-RAS RTC hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target</pre>
+    <p style="margin:6px 0 0"><b>⑤ 有効にする</b></p>
+<pre class="code">sudo chmod +x /usr/local/sbin/cpi-rtc-load.sh /usr/local/sbin/cpi-rtc-save.sh
+sudo systemctl daemon-reload
+sudo systemctl enable cpi-rtc-load.service cpi-rtc-save.timer
+sudo systemctl start cpi-rtc-save.timer
+systemctl list-timers | grep cpi</pre>
+
+    <h3>ネットの時刻合わせなしで起動する試験</h3>
+<pre class="code"># ネットでの時刻合わせを止めてシャットダウン
+sudo timedatectl set-ntp false
+sudo poweroff
+# → 電源を抜いて約7分待ち、電源を入れて起動
+
+# 起動後の確認
+date
+systemctl status cpi-rtc-load --no-pager
+journalctl -u thdrc-logger -n 3 --no-pager
+
+# 試験のあと、ネットでの時刻合わせを元に戻す
+sudo timedatectl set-ntp true</pre>
+    <div class="table-wrap">
+      <table>
+        <tr><th>時点</th><th>ラズパイの時刻</th><th>結果</th></tr>
+        <tr><td>起動した直後</td><td class="num">11:17</td><td>シャットダウンしたときの時刻のまま（約7分遅れ）</td></tr>
+        <tr><td>cpi-rtc-load のあと</td><td class="num">11:25</td><td class="ok">CPI-RAS の時計から読み込んで、正しい時刻に直った</td></tr>
+        <tr><td>THD-R-C の記録</td><td class="num">―</td><td class="ok">1行目から正しい時刻で記録された</td></tr>
+      </table>
+    </div>
+
+    <h3>確認できたこと</h3>
+    <ul>
+      <li>CPI-RAS は Raspberry Pi 5 で動く</li>
+      <li>24V の電源だけでラズパイを動かせる（USB-C の電源はいらない）</li>
+      <li>CPI-RAS と RPi-GP40T は、ピンがぶつからずに重ねて使える</li>
+      <li>ネットがなくても、CPI-RAS の時計で正しい時刻のまま起動・記録できる</li>
+      <li>停電したときは、記録が途切れた時刻と再開した時刻から、止まっていた時間がわかる</li>
+    </ul>
+
+    <h3>残っていること</h3>
+    <ul>
+      <li><b>時刻合わせを戻したかの確認</b>：<code>sudo timedatectl set-ntp true</code> を実行していなければ実行する（<code>timedatectl</code> で「NTP service: active」なら戻っている）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="power">電圧・電流のまとめ</h2>
+  <div class="card table-wrap">
+    <table>
+      <tr><th>場所</th><th>かかっているもの</th><th>大きさ</th><th>メモ</th></tr>
+      <tr><td>CPI-RAS の電源端子（CN1）</td><td>直流電圧</td><td class="num">24V</td><td>THD-R-C と同じ ACアダプター（BS-ACDC-2420）から。3番 V＋（黄）・2番 V−（青）</td></tr>
+      <tr><td>CPI-RAS の時計の電池（CR2032）</td><td>直流電圧</td><td class="num">3V</td><td>時計の部品が使うのは 約0.7µA（時刻を刻むだけのとき）</td></tr>
+      <tr><td>ラズパイの電源</td><td>直流電圧</td><td class="num">5V</td><td>CPI-RAS が 24V から作り、40ピンを通してラズパイに送る（ラズパイの USB-C は使わない）</td></tr>
+      <tr><td>SHT31 の電源</td><td>直流電圧</td><td class="num">3.3V</td><td>ラズパイの1番ピンから（ブレッドボードの ＋ の列を通る）</td></tr>
+      <tr><td>SHT31 の通信（I2C）</td><td>信号の電圧</td><td class="num">3.3V</td><td>ラズパイの GPIO は 3.3V（5V をかけると壊れる）</td></tr>
+      <tr><td>USB モジュール（Pt100・K型）</td><td>USB の電源</td><td class="num">5V</td><td>ラズパイの USB 差し込み口から</td></tr>
+      <tr><td>Pt100 の線</td><td>モジュールが流す測定用の電流</td><td class="num">小さい一定の電流</td><td>値は販売ページに書かれていない</td></tr>
+      <tr><td>K型熱電対の線</td><td>温度差で出る電圧</td><td class="num">約0.041mV／℃</td><td>室温どうしなら 1mV もない</td></tr>
+      <tr><td>THD-R-C の出力</td><td>電流</td><td class="num">4〜20mA</td><td>温度・湿度で2本</td></tr>
+      <tr><td>THD-R-C 側の 150Ω</td><td>抵抗の両端の電圧</td><td class="num">0.6〜3.0V</td><td>GP40T で測る</td></tr>
+      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V（2.0A まで）</td><td>ACアダプター BS-ACDC-2420 → パワーコネクター（2芯）で ＋・－ に分けてつなぐ。CPI-RAS（ラズパイの電源）と共用</td></tr>
+    </table>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="pi">ラズパイの中の処理</h2>
+  <div class="card table-wrap">
+    <table>
+      <tr><th>プログラム</th><th>やること</th><th>間隔</th><th>書く場所</th></tr>
+      <tr><td>sht31-logger</td><td>SHT31 を測る・記録・警報メール・センサー異常メール</td><td class="num">5秒（記録・判定は1分）</td><td>現在値：メモリ上 / 記録：SDカード <code>templog/日付.csv</code></td></tr>
+      <tr><td>pt100-logger</td><td>Pt100 モジュールの温度を記録</td><td class="num">10秒（記録は1分）</td><td><code>templog/pt100/日付.csv</code></td></tr>
+      <tr><td>ktc-logger</td><td>K型熱電対モジュールの温度を記録</td><td class="num">10秒（記録は1分）</td><td><code>templog/ktc/日付.csv</code></td></tr>
+      <tr><td>thdrc-logger</td><td>THD-R-C を GP40T で読んで記録（つないでいるときだけ）</td><td class="num">5秒（記録は1分）</td><td><code>templog/thdrc/日付.csv</code></td></tr>
+      <tr><td>temp-web</td><td>現在値の窓口（/api/now）と管理の窓口。ラズパイ内のサイト</td><td class="num">頼まれたとき</td><td>―</td></tr>
+      <tr><td>pages-publish</td><td>記録を10分ごとの平均・最高・最低にまとめ、公開サイトへ送る</td><td class="num">10分</td><td>GitHub Pages</td></tr>
+      <tr><td>templog-backup</td><td>記録と1日ごとのグラフ画像を Google ドライブへ</td><td class="num">1時間</td><td>Google ドライブ</td></tr>
+      <tr><td>netcheck</td><td>ネットが切れたら、つなぎ直す・再起動する</td><td class="num">常に見張る</td><td>―</td></tr>
+      <tr><td>accel-logger</td><td>加速度センサーを MCP3004（SPI1）で読んで記録</td><td class="num">0.1秒（今の値は1秒・記録は1分）</td><td><code>templog/accel/日付.csv</code></td></tr>
+      <tr><td>cpi-rtc-load</td><td>起動したときに、CPI-RAS の時計から今の時刻を読み込む</td><td class="num">起動時に1回</td><td>ラズパイの時計</td></tr>
+      <tr><td>cpi-rtc-save</td><td>ネットで合わせた正しい時刻を、CPI-RAS の時計に書き込む</td><td class="num">1時間（起動5分後から）</td><td>CPI-RAS の時計</td></tr>
+    </table>
+    <ul>
+      <li>補正（管理欄で設定する、測った値に足す数）は、記録する前に足す。補正を変えても、それまでの記録は変わらない</li>
+      <li>警報（高温・低温・高湿）は SHT31 の値だけで判定する。比較用センサーではメールは送らない</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="site">サイトに出るまで</h2>
+  <div class="card">
+    <h3>現在の値（上のカード・比較の表）</h3>
+    <div class="flow">
+      <div class="step"><b>各ロガー</b>測った値をメモリ上のファイルに書く<span class="v">5〜10秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>temp-web</b>/api/now の窓口で値を返す</div>
+      <div class="arrow"></div>
+      <div class="step"><b>Tailscale Funnel</b>ラズパイの窓口だけをインターネットから読めるようにする</div>
+      <div class="arrow"></div>
+      <div class="step"><b>ブラウザ</b>サイトが直接読みに行く<span class="v">5秒ごと</span></div>
+    </div>
+    <h3>グラフ</h3>
+    <div class="flow">
+      <div class="step"><b>SDカードの記録</b>1分ごとの値</div>
+      <div class="arrow"></div>
+      <div class="step"><b>pages-publish</b>10分ずつまとめて平均・最高・最低を計算<span class="v">10分ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>GitHub Pages</b>公開サイトに置く</div>
+      <div class="arrow"></div>
+      <div class="step"><b>ブラウザ</b>グラフを描く（1分ごとに読み直す）。CSVで取り込んだ線もここで重ねる</div>
+    </div>
+    <ul>
+      <li>グラフの1点は「10分間の平均」。温度の薄い帯は、その10分の最高〜最低</li>
+      <li>SDカードの記録（1分ごと）は「CSVダウンロード」で見られる</li>
+      <li>「CSVを取り込む」で取り込んだ記録は、ラズパイに保存されて公開サイトに載る（見ている人全員のグラフに出る。取り込み・削除には管理用パスワードが必要）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="dew">露点温度の出し方</h2>
+  <div class="card">
+    <p style="margin-top:0">露点温度は、<b>空気がそのまま冷えていったとき、何℃で結露しはじめるか</b>の温度。
+      センサーで直接測っているのではなく、<b>温度と湿度から計算</b>している。
+      サイトでは「センサーの比較（今の値）」の表と、上のグラフの「露点温度」ボタンで見られる。</p>
+    <h3>今の値（センサーの比較の表）</h3>
+    <div class="flow">
+      <div class="step"><b>センサー</b>温度と湿度を測る<span class="v">SHT31・THD-R-C</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>今の温度・湿度を /api/now で渡す（露点温度は計算しない）<span class="v">5秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ブラウザ</b>サイトの画面の中で、温度と湿度から露点温度を計算<span class="v">5秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>比較の表</b>「湿度」の右の「露点温度」の列に出す<span class="v">小数1桁</span></div>
+    </div>
+    <h3>計算のしかた（マグヌスの式）</h3>
+    <p class="muted" style="margin:0">同じ式を、ラズパイ（記録・グラフ用。alarm_settings.py の dew_point）と、サイトの画面（今の値の表用）の両方で使っている。</p>
+    <span class="formula">T = 温度[℃]、RH = 湿度[%]
+γ = ln(RH ÷ 100) + 17.62 × T ÷ (243.12 + T)
+露点温度[℃] = 243.12 × γ ÷ (17.62 − γ)</span>
+    <ul>
+      <li>ln は自然対数（電卓の「ln」ボタン）。17.62 と 243.12 は、水の上の空気で使う決まった数（-45〜60℃ で使える）</li>
+      <li>例：温度 23.3℃・湿度 46.3% のとき
+        <ul>
+          <li>γ = ln(0.463) + 17.62 × 23.3 ÷ 266.42 = -0.770 + 1.541 = 0.771</li>
+          <li>露点温度 = 243.12 × 0.771 ÷ (17.62 − 0.771) ≒ <b>11.1℃</b></li>
+          <li>つまり、この空気が 11.1℃ まで冷えると結露しはじめる</li>
+        </ul></li>
+      <li>計算の誤差は ±0.1℃ くらい。それよりも、センサーの湿度の誤差のほうが大きく効く（室温くらいなら、湿度が 3% ずれると露点温度は 0.7〜1.4℃ くらいずれる）</li>
+    </ul>
+    <h3>どのセンサーで出しているか</h3>
+    <ul>
+      <li>SHT31：自分の温度と湿度から計算</li>
+      <li>THD-R-C：自分の温度と湿度から計算。下に小さく「SHT31 との差」も出す</li>
+      <li>Pt100・K型熱電対：湿度を測っていないので「--」（ほかのセンサーの湿度を借りて計算することはしていない）</li>
+    </ul>
+    <h3>見方の目安</h3>
+    <ul>
+      <li>壁・窓・製品など、<b>ものの表面の温度が露点温度より低い</b>と、そこに結露する</li>
+      <li>温度と露点温度の差が小さいほど（湿度が高いほど）、結露しやすい</li>
+    </ul>
+    <h3>グラフ・記録・バックアップ</h3>
+    <div class="flow">
+      <div class="step"><b>sht31-logger</b>1分ごとに温度・湿度から露点温度を計算し、CSVの「露点温度(℃)」の列に書く<span class="v">1分ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>pages-publish</b>1分ごとの露点温度を10分ずつ平均して、公開サイトのデータに入れる<span class="v">10分ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>サイト</b>上のグラフの「温度」「露点温度」ボタンで切り替えて表示<span class="v">画像で保存もできる</span></div>
+    </div>
+    <ul>
+      <li>CSV（SDカード・CSVダウンロード・Google ドライブのバックアップ）：SHT31 の記録に「露点温度(℃)」の列がある（この機能を入れた日から。それより前の日のCSVにはない）</li>
+      <li>グラフの1点は、1分ごとに計算した露点温度の10分間の平均（平均の温度・湿度から計算するより正確）</li>
+      <li>THD-R-C の露点温度も、THD-R-C の1分ごとの温度・湿度から計算してグラフに出す（CSVには露点温度の列はなく、グラフを作るときに計算）</li>
+      <li>取り込んだCSVは、同じ機器の「温度」と「湿度」の線がそろっていれば（例: GR-3500 温度・GR-3500 湿度）、同じ時刻どうしで計算して「GR-3500 露点温度」の線を出す</li>
+      <li>1日ごとのグラフ画像（Google ドライブにバックアップ）も、温度・湿度・露点温度の3段になった</li>
+      <li>前の日のグラフ（この機能を入れる前の日）も、記録の温度・湿度から計算して露点温度を出せる</li>
+    </ul>
+  </div>
+
+  <footer class="muted">配線・センサー・設定を変えたら、このページも直してください。</footer>
+</main>
+</body>
+</html>
