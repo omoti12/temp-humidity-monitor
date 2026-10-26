@@ -1,0 +1,1192 @@
+<!doctype html>
+<!--
+  ============================================================
+  公開サイトの画面（https://omoti12.github.io/temp-humidity-monitor/）
+
+  データの読み先
+    ・現在値：ラズパイの窓口（NOW_URL）を5秒ごとに読む
+              つながらないときは data/latest.json（10分ごとに更新）の値を表示する
+    ・グラフ：data/日付.json（ラズパイが10分ごとに送る）を1分ごとに読み直す
+
+  このファイルを直したら、ラズパイで git pull すると、次の公開（10分以内）で反映される
+  （すぐ反映したいときは python3 ~/temp-monitor/pages/publish.py）
+  ============================================================
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- スマホでも見やすい幅で表示する -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>温湿度モニター</title>
+<!-- グラフを描く部品（Chart.js）。サイトと一緒に置いてある -->
+<script src="chart.umd.js"></script>
+<!-- グラフを拡大・移動する部品（hammer.min.js はスマホの指の操作用。zoom より先に読む） -->
+<script src="hammer.min.js"></script>
+<script src="chartjs-plugin-zoom.min.js"></script>
+<style>
+  /* ---- 色の設定（ここを変えると全体の色が変わる）---- */
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
+    --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
+    --hot-warn: #b08800; --cold-warn: #9775fa; --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e; --ax: #e8590c; --ay: #2f9e44; --az: #1971c2; --shake: #868e96;
+  }
+  /* スマホやPCがダークモードのときの色 */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
+      --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
+      --hot-warn: #fcc419; --cold-warn: #d0bfff; --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a; --ax: #ffa94d; --ay: #8ce99a; --az: #74c0fc; --shake: #ced4da;
+    }
+  }
+  /* ---- 全体のレイアウト ---- */
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  /* 設置場所の名前（登録されているときだけ、見出しの横に出す） */
+  h1 .place { margin-left: .6em; color: var(--temp); }
+  .updated { color: var(--muted); font-size: .85rem; }
+  .howto { display: inline-block; margin-top: 4px; font-size: .85rem; color: var(--hum); }
+  /* ---- 上の3つのカード（現在の温度・湿度・状態）---- */
+  .now { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .label { color: var(--muted); font-size: .85rem; }
+  .value { font-size: 2.4rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .value small { font-size: 1rem; font-weight: 400; margin-left: 2px; }
+  #temp { color: var(--temp); } #hum { color: var(--hum); }
+  /* 状態の文字の色（正常=緑、高温注意=黄、高温警報=オレンジ、低温注意=薄紫、低温警報=紫） */
+  /* 「高温」「低温」は前の版で記録した状態の名前（警報と同じ色にする） */
+  #status.正常 { color: var(--ok); }
+  #status.高温注意 { color: var(--hot-warn); } #status.高温警報, #status.高温 { color: var(--warn); }
+  #status.低温注意 { color: var(--cold-warn); } #status.低温警報, #status.低温 { color: var(--out); }
+  /* 湿度の状態（高湿注意=黄、高湿警報=オレンジ。正常のときは表示しない） */
+  .substatus { font-size: .95rem; font-weight: 700; margin-top: 2px; }
+  #humStatus.高湿注意 { color: var(--hot-warn); } #humStatus.高湿警報 { color: var(--warn); }
+  .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
+  /* ---- SHT31 と比較用センサー THD-R-C の比べ（THD-R-C を動かしているときだけ出す）---- */
+  .compare { margin-bottom: 16px; }
+  .compare table { width: 100%; border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .compare th, .compare td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .compare th:first-child, .compare td:first-child { text-align: left; }
+  .compare th { color: var(--muted); font-weight: 400; font-size: .85rem; }
+  .compare td { font-size: 1.15rem; font-weight: 600; }
+  .compare .cmp { color: var(--cmp); }
+  .compare .pt { color: var(--pt); }
+  .compare .ktc { color: var(--ktc); }
+  .compare .d { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; }
+  .compare .note { color: var(--muted); font-size: .8rem; margin-top: 6px; }
+  /* ---- 日付を選ぶボタンの並び ---- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .controls button, .controls input, .controls a {
+    font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); text-decoration: none; cursor: pointer; }
+  .import-msg { color: var(--muted); font-size: .85rem; margin: -4px 0 12px; }
+  .import-msg.error { color: var(--warn); }
+  .import-go { font: inherit; font-size: .8rem; padding: 2px 10px; border-radius: 8px; border: 1px solid var(--line);
+               background: var(--card); color: var(--text); cursor: pointer; }
+  /* ---- グラフ ---- */
+  .chart-card { margin-bottom: 12px; }
+  /* ---- グラフの表示範囲のボタン ---- */
+  .zoombar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .zoombar button { font: inherit; font-size: .85rem; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line);
+                    background: var(--card); color: var(--text); cursor: pointer; }
+  .zoombar .hint { color: var(--muted); font-size: .8rem; }
+  .chart-box { position: relative; height: 320px; }
+  .chart-box[hidden] { display: none; }
+  /* 加速度の今の値（グラフの右上） */
+  .accel-now { font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .accel-now b { margin: 0 2px 0 8px; color: var(--muted); font-weight: 400; }
+  /* 温度・露点温度の切り替えボタン（選んでいる方を濃くする） */
+  .chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+  .switch { display: flex; gap: 4px; }
+  .switch button { font: inherit; font-size: .85rem; padding: 3px 12px; border-radius: 8px; border: 1px solid var(--line);
+                   background: var(--card); color: var(--text); cursor: pointer; }
+  .switch button.on { background: var(--text); color: var(--card); border-color: var(--text); }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  /* ---- 警報メールの宛先（管理）---- */
+  .admin { margin-top: 24px; }
+  .admin summary { cursor: pointer; font-weight: 600; }
+  .admin .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .admin input { flex: 1 1 220px; min-width: 0; font: inherit; padding: 6px 10px; border-radius: 8px;
+                 border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .admin button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+                  background: var(--card); color: var(--text); cursor: pointer; }
+  .admin ul { list-style: none; padding: 0; margin: 12px 0 0; }
+  .admin li { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+              padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .admin .msg { font-size: .9rem; margin: 10px 0 0; min-height: 1.2em; }
+  .admin .msg.error { color: var(--warn); }
+  .admin .sub { font-size: 1rem; margin: 20px 0 4px; }
+  .admin .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin-top: 8px; }
+  .admin .grid label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+  .admin .grid input { flex: none; width: 100%; color: var(--text); }
+  .admin .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: .9rem; }
+  .admin .check input { flex: none; width: auto; }
+  .admin .pause-state { font-weight: 700; margin-top: 4px; }
+  .admin .pause-state.on { color: var(--ok); } .admin .pause-state.off { color: var(--warn); }
+  /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
+  @media (max-width: 600px) {
+    .now { grid-template-columns: 1fr 1fr; }
+    .now .card:last-child { grid-column: span 2; }
+    .value { font-size: 1.9rem; }
+    .chart-box { height: 240px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <!-- 見出しと最終測定の時刻 -->
+  <header>
+    <h1>温湿度モニター<span class="place" id="place"></span></h1>
+    <span class="updated" id="updated"></span>
+  </header>
+  <!-- 各センサーの測り方・つなぎ方の説明ページ -->
+  <a class="howto" href="system.html">測り方・仕組み</a>
+
+  <!-- 現在の温度・湿度・状態（中身は下の showLatest() が書き込む） -->
+  <section class="now">
+    <div class="card"><div class="label">現在の温度</div><div class="value" id="temp">--</div></div>
+    <div class="card"><div class="label">現在の湿度</div><div class="value" id="hum">--</div>
+      <div class="substatus" id="humStatus" hidden></div></div>
+    <div class="card"><div class="label">状態</div><div class="value" id="status">--</div>
+      <div class="stale" id="stale" hidden>30分以上データが更新されていません</div></div>
+  </section>
+
+  <!-- SHT31 と比較用センサー（THD-R-C・Pt100・K型熱電対）の今の値の比べ（比較用センサーを動かしているときだけ出す。中身は showCompare() が書く） -->
+  <section class="card compare" id="compare" hidden>
+    <div class="label">センサーの比較（今の値）</div>
+    <table>
+      <tr><th>センサー</th><th>温度</th><th>湿度</th><th>露点温度</th></tr>
+      <tr><td>SHT31</td><td id="cmp-sht-t">--</td><td id="cmp-sht-h">--</td><td id="cmp-sht-d">--</td></tr>
+      <tr id="cmp-thdrc" hidden><td class="cmp">THD-R-C</td><td id="cmp-thdrc-t">--</td><td id="cmp-thdrc-h">--</td><td id="cmp-thdrc-d">--</td></tr>
+      <tr id="cmp-pt100" hidden><td class="pt">Pt100</td><td id="cmp-pt100-t">--</td><td id="cmp-pt100-h">--</td><td id="cmp-pt100-d">--</td></tr>
+      <tr id="cmp-ktc" hidden><td class="ktc">K型熱電対</td><td id="cmp-ktc-t">--</td><td id="cmp-ktc-h">--</td><td id="cmp-ktc-d">--</td></tr>
+    </table>
+    <div class="note">小さい数字は SHT31 との差。THD-R-C の誤差は 温度 ±1.0℃・湿度 ±3%（説明書の値）</div>
+  </section>
+
+  <!-- 表示する日を切り替えるボタンと、CSVのダウンロード -->
+  <div class="controls">
+    <button id="prev">◀ 前日</button>
+    <input type="date" id="day">
+    <button id="next">翌日 ▶</button>
+    <button id="today">今日</button>
+    <a id="dl" href="#">CSVダウンロード</a>
+    <button id="saveGraph">グラフを画像で保存</button>
+    <!-- ほかの記録計のCSVを取り込んでグラフに重ねる（ファイルはこのブラウザの中だけで読む） -->
+    <button id="importBtn">CSVを取り込む</button>
+    <input type="file" id="importFile" accept=".csv,text/csv" multiple hidden>
+    <button id="importClear" hidden>取り込んだ線を消す</button>
+  </div>
+  <div class="import-msg" id="importMsg" hidden></div>
+
+  <!-- グラフの表示範囲（拡大）のボタン。温度と湿度のグラフは一緒に動く -->
+  <div class="zoombar">
+    <span class="label">表示範囲</span>
+    <button data-hours="24">全体</button>
+    <button data-hours="6">6時間</button>
+    <button data-hours="3">3時間</button>
+    <button data-hours="1">1時間</button>
+    <button data-move="-1">◀ 前へ</button>
+    <button data-move="1">次へ ▶</button>
+    <span class="hint" id="zoomHint"></span>
+  </div>
+
+  <!-- グラフを描く場所 -->
+  <!-- 上のグラフは「温度」と「露点温度」をボタンで切り替える -->
+  <div class="card chart-card">
+    <div class="chart-head">
+      <div class="label" id="topLabel">温度（10分ごとの平均、薄い帯は最高〜最低）</div>
+      <div class="switch">
+        <button data-top="temp">温度</button>
+        <button data-top="dew">露点温度</button>
+      </div>
+    </div>
+    <div class="chart-box" id="tempBox"><canvas id="tempChart"></canvas></div>
+    <div class="chart-box" id="dewBox" hidden><canvas id="dewChart"></canvas></div>
+  </div>
+  <div class="card chart-card">
+    <div class="label">湿度（10分ごとの平均）</div>
+    <div class="chart-box"><canvas id="humChart"></canvas></div>
+  </div>
+  <!-- 加速度センサー（動かしているときだけ出す。今の値は5秒ごと、グラフは記録がある日だけ） -->
+  <div class="card chart-card" id="accelCard" hidden>
+    <div class="chart-head">
+      <div class="label" id="accelLabel">加速度（X・Y・Z は10分ごとの平均、揺れは10分間の最大）</div>
+      <div class="accel-now" id="accelNow"></div>
+    </div>
+    <div class="chart-box" id="accelBox"><canvas id="accelChart"></canvas></div>
+  </div>
+  <div class="empty" id="empty" hidden>この日の記録はありません</div>
+
+  <!-- 管理（警報の設定・警報メールの宛先）。押すと開く。管理用パスワードが必要 -->
+  <details class="card admin">
+    <summary>管理（警報の設定・メールの宛先）</summary>
+    <div class="label" style="margin-top:8px">表示・変更には管理用パスワードが必要です</div>
+    <form class="row" id="pwForm">
+      <input type="password" id="pw" placeholder="管理用パスワード" autocomplete="current-password">
+      <button type="submit">表示</button>
+    </form>
+
+    <!-- メールの一時停止（警報・注意・回復・センサー異常を全部止める。パスワードが正しいと表示される） -->
+    <div id="pauseBox" hidden>
+      <h3 class="sub">メールの送信（警報・注意・回復・センサー異常）</h3>
+      <div class="pause-state" id="pauseState"></div>
+      <div class="row">
+        <button type="button" data-pause="1">1時間止める</button>
+        <button type="button" data-pause="-1">再開するまで止める</button>
+        <button type="button" data-pause="0">再開する</button>
+      </div>
+      <div class="label" style="margin-top:6px">止めると、警報・注意・継続・回復・センサー異常のメールが全部止まります。止めている間も、測定・記録・表示は続きます。再開したときに警報・注意が続いていれば、すぐメールで知らせます</div>
+      <p class="msg" id="pauseMsg"></p>
+    </div>
+
+    <!-- 警報の設定（パスワードが正しいと表示される） -->
+    <form id="settingsForm" hidden>
+      <h3 class="sub">警報の設定</h3>
+      <div class="grid">
+        <label>高温警報（2段目・℃以上）<input type="number" step="0.1" id="s_high_alarm" required></label>
+        <label>高温注意（1段目・℃以上）<input type="number" step="0.1" id="s_high_warn" required></label>
+        <label>低温注意（1段目・℃以下）<input type="number" step="0.1" id="s_low_warn" required></label>
+        <label>低温警報（2段目・℃以下）<input type="number" step="0.1" id="s_low_alarm" required></label>
+        <label>回復の幅（℃）<input type="number" step="0.1" min="0" max="5" id="s_hysteresis" required></label>
+        <label>再通知の間隔（分。0で再通知しない）<input type="number" step="1" min="0" max="1440" id="s_remind_min" required></label>
+        <label>センサー異常を知らせるまで（分）<input type="number" step="1" min="1" max="1440" id="s_sensor_fail_min" required></label>
+      </div>
+      <div class="grid">
+        <label>設置場所の名前（サイトの一番上とメールの件名に出ます。30文字まで）<input type="text" maxlength="30" id="s_location_name" placeholder="例: 第1倉庫"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="s_hum_enabled">湿度の警報を使う</label>
+      <div class="grid">
+        <label>湿度警報（2段目・%以上）<input type="number" step="0.1" min="0" max="100" id="s_hum_alarm" required></label>
+        <label>湿度注意（1段目・%以上）<input type="number" step="0.1" min="0" max="100" id="s_hum_warn" required></label>
+        <label>湿度の回復の幅（%）<input type="number" step="0.1" min="0" max="10" id="s_hum_hysteresis" required></label>
+      </div>
+      <div class="label" style="margin-top:8px">「注意」が1段目（軽い）、「警報」が2段目（深刻）です。高温と湿度は「注意 ≦ 警報」、低温は「警報 ≦ 注意」にしてください。注意の段階がいらないときは、注意と警報を同じ温度にしてください</div>
+      <label class="check"><input type="checkbox" id="s_mail_on_warn">「注意」でもメールを送る（オフなら「警報」だけ送る）</label>
+      <h3 class="sub">センサーの補正</h3>
+      <div class="grid">
+        <label>SHT31 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_sht31_temp" required></label>
+        <label>SHT31 の湿度（%）<input type="number" step="0.1" min="-20" max="20" id="s_cal_sht31_hum" required></label>
+        <label>THD-R-C の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_thdrc_temp" required></label>
+        <label>THD-R-C の湿度（%）<input type="number" step="0.1" min="-20" max="20" id="s_cal_thdrc_hum" required></label>
+        <label>Pt100 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_pt100_temp" required></label>
+        <label>K型熱電対 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_ktc_temp" required></label>
+      </div>
+      <div class="label" style="margin-top:8px">測った値にこの数を足して、記録・表示します（例: 5 なら 5 上げる、-1.5 なら 1.5 下げる。0 なら補正なし）。SHT31 の補正は警報の判定にも使います。1分以内に反映され、それまでの記録は変わりません</div>
+      <div class="row"><button type="submit">設定を保存</button></div>
+      <p class="msg" id="settingsMsg"></p>
+    </form>
+
+    <!-- 警報メールの宛先（パスワードが正しいと表示される） -->
+    <h3 class="sub" id="rcptsTitle" hidden>警報メールの宛先</h3>
+    <ul id="rcpts"></ul>
+    <form class="row" id="addForm" hidden>
+      <input type="email" id="newEmail" placeholder="追加するメールアドレス" autocomplete="off">
+      <button type="submit">追加</button>
+    </form>
+    <p class="msg" id="adminMsg"></p>
+  </details>
+</main>
+
+<script>
+// ============================================================
+// 画面を動かすプログラム（JavaScript）
+// ============================================================
+
+// よく使う短縮の関数
+// $("temp")      … id="temp" の部品を取り出す
+// css("--temp")  … 上の :root で決めた色を取り出す
+// fmt(日付)      … 日付を "2026-10-19" の形にする
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (d) => d.toLocaleDateString("sv-SE");   // YYYY-MM-DD
+// 今表示している日（最初は今日）
+let day = fmt(new Date());
+let tempChart, humChart, dewChart, accelChart;
+// グラフ全部（拡大・移動を一緒にするため）と、上の段に今出しているグラフ（温度か露点温度）
+const allCharts = () => [tempChart, humChart, dewChart, accelChart];
+let topMode = "temp";
+const topChart = () => (topMode === "dew" ? dewChart : tempChart);
+
+// 0:00〜23:50 の10分刻みの軸（記録がない時間は空白にする）
+const slots = [];
+for (let m = 0; m < 24 * 60; m += 10)
+  slots.push(String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"));
+
+// スマホなど指で操作する画面か（拡大のしかたを変える）
+const isTouch = window.matchMedia("(pointer: coarse)").matches;
+
+// 横軸の目盛りの間隔（何マスおきに時刻を書くか。1マス = 10分）
+// 表示している範囲の広さに合わせて、10分・30分・1時間・2時間・6時間・12時間ごとから選ぶ
+function labelStep(count) {
+  const maxLabels = window.innerWidth < 600 ? 5 : 12;
+  for (const step of [1, 3, 6, 12, 36, 72]) if (count / step <= maxLabels) return step;
+  return 72;
+}
+
+// グラフ共通の見た目の設定（unit は "℃" か "%"）
+function lineOpts(unit) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false, spanGaps: false,
+    // グラフにマウスを乗せると、その時刻の値をまとめて表示する
+    interaction: { mode: "index", intersect: false },
+    // 凡例: 名前が "_" で始まるデータ（最高・最低の帯）と、この日に記録のない線は出さない
+    // 吹き出し: 測った値だけを出す（警報・注意の基準の線はグラフを見ればわかるので出さない）
+    plugins: { legend: { labels: { color: css("--muted"), boxWidth: 28, boxHeight: 3, padding: 14,
+                                   filter: (i, d) => !i.text.startsWith("_")
+                                     && d.datasets[i.datasetIndex].data.some((v) => v != null) } },
+               tooltip: { filter: (i) => !i.dataset.label.startsWith("_") && !i.dataset.threshold && i.parsed.y != null,
+                          callbacks: { label: (c) => {
+                            const u = c.dataset.unit || unit;   // 線ごとの単位（加速度のグラフの「傾き」は °）
+                            return `${c.dataset.label}: ${c.parsed.y.toFixed(u === "g" ? 2 : 1)}${u}`;
+                          } } },
+               // 拡大・移動の設定（横方向＝時刻だけ。温度と湿度のグラフは syncRange で一緒に動かす）
+               zoom: {
+                 limits: { x: { min: 0, max: slots.length - 1, minRange: 5 } },
+                 zoom: { mode: "x",
+                         // PC: ドラッグで範囲を選んで拡大、Ctrl＋ホイールで拡大・縮小
+                         drag: { enabled: !isTouch, backgroundColor: "rgba(100, 120, 150, 0.15)" },
+                         wheel: { enabled: !isTouch, modifierKey: "ctrl" },
+                         // スマホ: 2本指で拡大・縮小
+                         pinch: { enabled: true },
+                         onZoomComplete: ({ chart }) => syncRange(chart) },
+                 // 拡大した後の左右の移動（PC は Shift＋ドラッグ、スマホは1本指）
+                 pan: { enabled: true, mode: "x", modifierKey: isTouch ? null : "shift",
+                        onPanComplete: ({ chart }) => syncRange(chart) },
+               } },
+    scales: {
+      x: { ticks: { color: css("--muted"), maxRotation: 0, autoSkip: false,
+                    callback: (v, i, ticks) => v % labelStep(ticks.length) === 0 ? slots[v] : "" },
+           grid: { color: (c) => (c.tick && c.tick.value % labelStep(c.chart.scales.x.ticks.length) === 0)
+                                   ? css("--line") : "transparent" } },
+      y: { ticks: { color: css("--muted"), callback: (v) => v + unit }, grid: { color: css("--line") } },
+    },
+  };
+}
+
+// グラフを2つ作る（最初は空。データは load() で入れる）
+function buildCharts() {
+  const temp = css("--temp"), hum = css("--hum");
+  tempChart = new Chart($("tempChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      // [0] 最高 と [1] 最低：この2本の間を薄く塗って「帯」にする
+      { label: "_max", data: [], borderWidth: 0, pointRadius: 0, pointHoverRadius: 0, fill: "+1", backgroundColor: temp + "22" },
+      { label: "_min", data: [], borderWidth: 0, pointRadius: 0, pointHoverRadius: 0, fill: false },
+      // [2] 温度の平均
+      { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5 },
+      // [3]〜[6] 警報（破線）と注意（点線）の基準
+      { label: "高温警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高温注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      // [7] 比較用センサー THD-R-C（記録がある日だけ出す）
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"),
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
+      // [8] 比較用センサー Pt100（記録がある日だけ出す）
+      { label: "Pt100", data: [], borderColor: css("--pt"), backgroundColor: css("--pt"),
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
+      // [9] 比較用センサー K型熱電対（記録がある日だけ出す）
+      { label: "K型熱電対", data: [], borderColor: css("--ktc"), backgroundColor: css("--ktc"),
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
+    ] },
+    options: lineOpts("℃"),
+  });
+  humChart = new Chart($("humChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      { label: "湿度", data: [], borderColor: hum, backgroundColor: hum, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5 },
+      // [1] [2] 湿度の警報（破線）と注意（点線）の基準（湿度の警報を使う設定のときだけ線が出る）
+      { label: "高湿警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高湿注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      // [3] 比較用センサー THD-R-C（記録がある日だけ出す）
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"),
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
+    ] },
+    options: lineOpts("%"),
+  });
+  // 露点温度のグラフ（温度と湿度から計算。上の段で「露点温度」を押したときに出す）
+  dewChart = new Chart($("dewChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      // [0] SHT31 の露点温度
+      { label: "露点温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5 },
+      // [1] 比較用センサー THD-R-C の露点温度（記録がある日だけ出す）
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"),
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
+    ] },
+    options: lineOpts("℃"),
+  });
+}
+
+// 加速度のグラフ（加速度センサーの記録がある日だけ出す）
+function buildAccelChart() {
+  const line = (label, color, extra = {}) => ({ label, data: [], borderColor: css(color), backgroundColor: css(color),
+                                               pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, ...extra });
+  accelChart = new Chart($("accelChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      line("X", "--ax"), line("Y", "--ay"), line("Z", "--az"),
+      // 揺れ（10分間の最大）。ふだんは 0 に近く、たたく・持ち上げると大きくなる
+      line("揺れ（最大）", "--shake", { borderDash: [4, 3] }),
+      // 傾き（基準から何度傾いたか。右の目盛り）。基準を決めていないときは出さない
+      line("傾き", "--text", { yAxisID: "y2", unit: "°", borderDash: [2, 2], hidden: true }),
+    ] },
+    options: lineOpts("g"),
+  });
+  // 傾き用の右の目盛り（度）
+  accelChart.options.scales.y2 = { position: "right", grid: { display: false }, suggestedMin: 0, suggestedMax: 5,
+                                   ticks: { color: css("--muted"), callback: (v) => v + "°" } };
+}
+
+// 上の段のグラフを「温度」（mode = "temp"）か「露点温度」（"dew"）に切り替える
+const TOP_LABELS = { temp: "温度（10分ごとの平均、薄い帯は最高〜最低）",
+                     dew: "露点温度（10分ごとの平均。温度と湿度から計算した、結露しはじめる温度）" };
+function setTop(mode) {
+  topMode = mode;
+  $("tempBox").hidden = mode !== "temp";
+  $("dewBox").hidden = mode !== "dew";
+  $("topLabel").textContent = TOP_LABELS[mode];
+  document.querySelectorAll("[data-top]").forEach((b) => b.classList.toggle("on", b.dataset.top === mode));
+  topChart().resize();      // 隠れていたグラフは大きさが決まっていないので、出したときに合わせる
+  try { localStorage.setItem("temp-monitor-top", mode); } catch (e) { /* 覚えられなくても動く */ }
+}
+
+// ラズパイが10分ごとに data/ 以下のJSONを更新する。キャッシュを避けるため時刻を付けて読む
+async function getJson(path) {
+  const res = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" });
+  return res.ok ? res.json() : null;
+}
+
+// ラズパイの現在値の窓口（Tailscale Funnel のURL + /api/now）。空なら10分ごとのデータだけで表示する
+const NOW_URL = "https://raspberrypi.tailfa1dcc.ts.net/api/now";
+let live = false;   // ラズパイから直接現在値を読めているか
+
+// 上の3つのカードと最終測定の時刻を書き換える
+// isLive が true ならラズパイから直接読んだ値、false なら10分ごとのデータの値
+function showLatest(l, isLive) {
+  const ts = new Date(l.time);
+  $("temp").innerHTML = `${l.temp.toFixed(1)}<small>℃</small>`;
+  $("hum").innerHTML = `${l.hum.toFixed(1)}<small>%</small>`;
+  $("status").textContent = l.status;
+  $("status").className = "value " + l.status;
+  showHumStatus(l.hum_status);
+  // 測定時刻が古すぎるとき（リアルタイムなら5分、10分ごとのデータなら30分）は注意を出す
+  $("stale").hidden = Date.now() - ts < (isLive ? 5 : 30) * 60 * 1000;
+  $("stale").textContent = `${isLive ? 5 : 30}分以上データが更新されていません`;
+  $("updated").textContent = `最終測定 ${fmt(ts)} ${ts.toTimeString().slice(0, isLive ? 8 : 5)}`
+    + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
+}
+
+// 露点温度[℃]（空気が冷えて結露しはじめる温度）を、温度 t[℃] と湿度 h[%] から計算する（マグヌスの式）
+// 湿度がないセンサー（Pt100・K型熱電対）や、測れていないときは null
+// 小数1桁に丸める（null はそのまま）
+const round1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
+
+function dewPoint(t, h) {
+  if (t == null || h == null || h <= 0) return null;
+  const a = 17.62, b = 243.12;                  // 水の上の空気で使う定数（-45〜60℃ で使える）
+  const g = Math.log(h / 100) + (a * t) / (b + t);
+  return (b * g) / (a - g);
+}
+
+// SHT31（s）と比較用センサー（c.thdrc・c.pt100・c.ktc）の今の値を並べて出す
+// 比較用センサーが1つも動いていなければ表ごと隠し、動いていないセンサーの行も隠す
+function showCompare(s, c) {
+  const names = ["thdrc", "pt100", "ktc"];
+  const any = !!(s && c && names.some((k) => c[k]));
+  $("compare").hidden = !any;
+  if (!any) return;
+  const val = (x, u) => (x == null ? "--" : `${x.toFixed(1)}${u}`);
+  // 値の下に小さく「SHT31 との差」（比較用センサー − SHT31）を出す。測れていない値・湿度のないセンサーは "--"
+  const cell = (x, base, u) => (x == null || base == null ? val(x, u)
+    : `${val(x, u)}<span class="d">${x - base >= 0 ? "+" : "-"}${Math.abs(x - base).toFixed(1)}${u}</span>`);
+  $("cmp-sht-t").textContent = val(s.temp, "℃");
+  $("cmp-sht-h").textContent = val(s.hum, "%");
+  // 露点温度は、それぞれのセンサーの温度と湿度から計算する（湿度のないセンサーは "--"）
+  const sd = dewPoint(s.temp, s.hum);
+  $("cmp-sht-d").textContent = val(sd, "℃");
+  names.forEach((k) => {
+    $(`cmp-${k}`).hidden = !c[k];
+    if (!c[k]) return;
+    $(`cmp-${k}-t`).innerHTML = cell(c[k].temp, s.temp, "℃");
+    $(`cmp-${k}-h`).innerHTML = cell(c[k].hum, s.hum, "%");
+    $(`cmp-${k}-d`).innerHTML = cell(dewPoint(c[k].temp, c[k].hum), sd, "℃");
+  });
+}
+
+// グラフに比較用センサーの線を入れる（cmp.thdrc・cmp.pt100・cmp.ktc は10分ごとの平均。記録がない日は線も凡例も出さない）
+// 記録がある日は、SHT31 の線の名前を「SHT31」にして見分けやすくする。Pt100・K型熱電対は温度だけ
+function showCompareLines(cmp) {
+  const line = (points) => {
+    const byTime = Object.fromEntries((points || []).map((p) => [p.time, p]));
+    return { has: Object.keys(byTime).length > 0, pick: (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null)) };
+  };
+  const thd = line(cmp.thdrc), pt = line(cmp.pt100), ktc = line(cmp.ktc);
+  const t = tempChart.data.datasets, h = humChart.data.datasets;
+  t[7].data = thd.pick("temp");
+  h[3].data = thd.pick("hum");
+  t[7].hidden = h[3].hidden = !thd.has;
+  t[8].data = pt.pick("temp");
+  t[8].hidden = !pt.has;
+  t[9].data = ktc.pick("temp");
+  t[9].hidden = !ktc.has;
+  t[2].label = thd.has || pt.has || ktc.has ? "SHT31" : "温度";
+  h[0].label = thd.has ? "SHT31" : "湿度";
+  // 露点温度: THD-R-C（湿度も測る）だけ。前の形のデータで dew がなければ、平均の温度・湿度から計算する
+  const dw = dewChart.data.datasets;
+  dw[1].data = (() => {
+    const byTime = Object.fromEntries((cmp.thdrc || []).map((p) => [p.time, p]));
+    return slots.map((s) => (byTime[s] ? byTime[s].dew ?? round1(dewPoint(byTime[s].temp, byTime[s].hum)) : null));
+  })();
+  dw[1].hidden = !dw[1].data.some((v) => v != null);
+  dw[0].label = dw[1].hidden ? "露点温度" : "SHT31";
+}
+
+// 湿度の状態（高湿注意・高湿警報）を、湿度の数字の下に出す。正常なら出さない
+function showHumStatus(hs) {
+  $("humStatus").hidden = !hs || hs === "正常";
+  $("humStatus").textContent = hs || "";
+  $("humStatus").className = "substatus " + (hs || "");
+}
+
+// 設置場所の名前を見出しの横とブラウザのタブに出す（登録されていなければ出さない）
+function showPlace(name) {
+  if (name === undefined) return;
+  $("place").textContent = name || "";
+  document.title = name ? `温湿度モニター｜${name}` : "温湿度モニター";
+}
+
+// 加速度センサーの今の値をグラフの右上に出す（a = {x, y, z, shake, base, dx, dy, dz, tilt}。動かしていなければ null）
+// 揺れ（shake）は直近5秒間の最大（5秒ごとに読むので、そのあいだの短い揺れも出る）
+// 基準を決めてあれば、X・Y・Z は「基準からの変化」と「傾き」を出す
+let accelLive = false;
+function showAccelNow(a) {
+  accelLive = !!a;
+  const sg = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+  $("accelNow").innerHTML = !a ? ""
+    : a.base
+      ? `基準から <b>X</b>${sg(a.dx)}g <b>Y</b>${sg(a.dy)}g <b>Z</b>${sg(a.dz)}g <b>傾き</b>${a.tilt.toFixed(1)}° <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}g`
+      : `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}g`;
+  showAccelCard();
+}
+// 加速度の欄は、今の値かその日の記録があるときだけ出す
+let accelHasDay = false;
+function showAccelCard() {
+  const wasHidden = $("accelCard").hidden;
+  $("accelCard").hidden = !(accelLive || accelHasDay);
+  $("accelBox").hidden = !accelHasDay;
+  if (wasHidden && !$("accelCard").hidden) accelChart.resize();     // 隠れていたグラフは、出したときに大きさを合わせる
+}
+
+// ラズパイの窓口から現在値を読む（5秒ごと）
+async function loadNow() {
+  if (!NOW_URL) return;
+  try {
+    const res = await fetch(NOW_URL, { cache: "no-store" });
+    const n = res.ok ? await res.json() : null;
+    live = !!(n && n.latest);
+    if (live) showLatest({ ...n.latest, time: n.latest.iso }, true);
+    showCompare(live ? n.latest : null, n);   // 比較用センサーを動かしていなければ隠れる
+    showAccelNow(n && n.accel);
+    if (n) showPlace(n.location);
+  } catch (e) {
+    live = false;   // ラズパイにつながらないときは10分ごとのデータを表示する
+    showCompare(null, null);
+  }
+}
+
+// 10分ごとのデータを読んで、グラフを描き直す（1分ごと・日付を変えたとき）
+async function load() {
+  let info, dayData;
+  try {
+    // latest.json（最新値など）と、表示している日のデータを同時に読む
+    [info, dayData] = await Promise.all([getJson("data/latest.json"), getJson(`data/${day}.json`)]);
+  } catch (e) {
+    $("updated").textContent = "接続できません（再試行中）";
+    return;
+  }
+  if (!info) return;
+  const d = { ...info, points: dayData ? dayData.points : [] };
+  // 比較用センサー（THD-R-C・Pt100・K型熱電対）の10分ごとの平均
+  const CMP_POINTS = { thdrc: dayData && dayData.thdrc_points, pt100: dayData && dayData.pt100_points,
+                       ktc: dayData && dayData.ktc_points };
+
+  // ラズパイから直接読めていないときだけ、こちらの値を現在値として表示する
+  if (d.latest && !live) showLatest(d.latest, false);
+  if (!live) showPlace(d.location);
+
+  // データを 0:00〜23:50 の軸に並べる（記録がない時間は null = 空白）
+  const byTime = Object.fromEntries(d.points.map((p) => [p.time, p]));
+  const pick = (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null));
+  const ds = tempChart.data.datasets;
+  ds[0].data = pick("temp_max");
+  ds[1].data = pick("temp_min");
+  ds[2].data = pick("temp");
+  // 基準の線（古いデータで thresholds がないときは、前の版の high / low を警報の線として使う）
+  const th = d.thresholds || { high_alarm: d.high, low_alarm: d.low };
+  ["high_alarm", "high_warn", "low_warn", "low_alarm"].forEach((k, i) => {
+    ds[3 + i].data = slots.map(() => th[k] ?? null);
+  });
+  humChart.data.datasets[0].data = pick("hum");
+  // 露点温度（前の形のデータで dew がなければ、10分の平均の温度・湿度から計算する）
+  dewChart.data.datasets[0].data = slots.map((s) => (byTime[s] ? byTime[s].dew ?? round1(dewPoint(byTime[s].temp, byTime[s].hum)) : null));
+  humChart.data.datasets[1].data = slots.map(() => th.hum_alarm ?? null);
+  humChart.data.datasets[2].data = slots.map(() => th.hum_warn ?? null);
+  // 湿度の警報を使わない設定のときは、凡例にも出さない
+  humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
+  showCompareLines(CMP_POINTS);
+  showImported();
+  // 加速度（記録がある日だけグラフを出す）
+  const accelBy = Object.fromEntries(((dayData && dayData.accel_points) || []).map((p) => [p.time, p]));
+  ["x", "y", "z", "shake", "tilt"].forEach((k, i) => {
+    accelChart.data.datasets[i].data = slots.map((s) => (accelBy[s] ? accelBy[s][k] ?? null : null));
+  });
+  accelHasDay = Object.keys(accelBy).length > 0;
+  // 基準を決めてあれば（傾きの値があれば）、X・Y・Z は基準からの変化。傾きの線も出す
+  const hasBase = accelChart.data.datasets[4].data.some((v) => v != null);
+  accelChart.data.datasets[4].hidden = !hasBase;
+  accelChart.options.scales.y2.display = hasBase;
+  ["X", "Y", "Z"].forEach((n, i) => { accelChart.data.datasets[i].label = hasBase ? `${n}（基準から）` : n; });
+  $("accelLabel").textContent = hasBase
+    ? "加速度（X・Y・Z は基準からの変化と傾きの10分ごとの平均、揺れは10分間の最大）"
+    : "加速度（X・Y・Z は10分ごとの平均、揺れは10分間の最大）";
+  showAccelCard();
+  for (const c of allCharts()) c.update();
+
+  // 記録がない日は「この日の記録はありません」を出し、CSVのリンクを隠す（取り込んだ記録があれば出さない）
+  $("empty").hidden = d.points.length > 0 || importedOnDay(day);
+  $("day").value = day;
+  $("dl").href = `data/${day}.csv`;
+  $("dl").hidden = !dayData;
+}
+
+// ============================================================
+// ほかの記録計のCSVを取り込んで、グラフに重ねる
+//   ファイルはブラウザで読み、列ごとの [時刻, 値] にしてラズパイ（/api/import）に送る（管理用パスワードが必要）
+//   ラズパイが公開サイトの data/import.json に載せるので、見ている人全員のグラフに出る
+//   取り込むたびに記録が足されていく（同じ線の同じ日をもう一度取り込むと、その日の分だけ入れ替わる）
+//   温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
+//   線の名前は「機器名 温度」（例: GR-3500 温度）。機器名はCSVの「機器名」の行、なければファイル名から取る
+//   読める形
+//     ・記録計 GR-3500 などのCSV（「波形名」「単位」の行から列の名前と単位を読む）
+//     ・1列目が日時、2列目からが数値のCSV（1行目が見出し。このサイトのCSVダウンロードの形も読める）
+// ============================================================
+let imported = [];      // 取り込んだ列 [{ label: 線の名前, unit: "℃" か "%", rows: [[日時, 値], ...] }, ...]
+// 取り込んだ線の色（ほかの線と見分けやすい色）
+const IMPORT_COLORS = ["#ae3ec9", "#868e96", "#f59f00", "#a61e4d", "#495057"];
+
+// ファイルを文字にする。UTF-8 で読めなければ Shift_JIS（記録計のCSVはたいていこちら）として読む
+async function readText(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch (e) {
+    return new TextDecoder("shift_jis").decode(buf);
+  }
+}
+
+// 列の名前と単位から、温度（℃）か湿度（%）かを決める。わからなければ温度とみなす
+function guessUnit(name, unit) {
+  const t = `${name} ${unit}`;
+  if (/RH|%|％|湿|シツ/i.test(t)) return "%";
+  return "℃";
+}
+
+// CSVの文字から取り込む列を取り出す。fileName は列の名前がないときに使う
+function parseCsv(text, fileName) {
+  // 全角・半角カナなどをそろえる（例: ｵﾝﾄﾞ → オンド、ﾟC → °C）
+  const lines = text.normalize("NFKC").split(/\r?\n/);
+  // 1行を区切る（"" で囲まれた値の "" は外す）
+  const cells = (line) => line.split(",").map((c) => c.trim().replace(/^"(.*)"$/, "$1").trim());
+  // 「2026/10/30  15:26:55.96」「2026-10-30 15:26:55」などの日時を読む
+  const DATE = /^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/;
+  let names = [], units = [], header = null, device = "";
+  const cols = [];      // 列ごとの [[日時, 値], ...]
+  for (const line of lines) {
+    const c = cells(line);
+    if (!c[0]) continue;
+    if (c[0] === "機器名") { device = c[1] || ""; continue; }
+    if (c[0] === "波形名") { names = c.slice(1); continue; }
+    if (c[0] === "単位") { units = c.slice(1); continue; }
+    const m = c[0].match(DATE);
+    if (!m) {
+      if (!cols.length) header = c;     // 記録が始まる前の最後の行を見出しとして覚えておく
+      continue;
+    }
+    const ts = new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+    c.slice(1).forEach((v, i) => {
+      const x = parseFloat(v);
+      if (!cols[i]) cols[i] = [];
+      if (Number.isFinite(x)) cols[i].push([ts, x]);
+    });
+  }
+  // 見出しの名前（「波形名」の行がなければ、記録の前の行）
+  if (!names.length && header) names = header.slice(1);
+  const base = fileName.replace(/\.csv$/i, "");
+  // 「機器名」の行がないCSVは、ファイル名から日付を除いた部分を機器名にする（例: GR-3500_2026-10-31.csv → GR-3500）
+  const fileDevice = base.replace(/[_\s-]*\d{4}[-./]?\d{1,2}[-./]?\d{1,2}.*$/, "").trim();
+  return cols.map((rows, i) => {
+    const name = (names[i] || "").replace(/\s+/g, "") || `${base} 列${i + 2}`;
+    const unit = guessUnit(name, units[i] || "");
+    // 線の名前は「機器名 温度」「機器名 湿度」（機器名がなければ「CSV取り込み」）にして、取り込んだ線だとわかるようにする
+    return { label: `${device || fileDevice || "CSV取り込み"} ${unit === "%" ? "湿度" : "温度"}`, unit, rows };
+  }).filter((col) => col.rows.length > 0);   // 数値のない列（「状態」など）は取り込まない
+}
+
+// 表示している日 d に、取り込んだ記録があるか
+function importedOnDay(d) {
+  return imported.some((col) => col.rows.some(([ts]) => fmt(ts) === d));
+}
+
+// 取り込んだ列を、表示している日の10分ごとの平均にしてグラフに入れる（前に入れた線は入れ直す）
+function showImported() {
+  for (const c of allCharts()) c.data.datasets = c.data.datasets.filter((ds) => !ds.imported);
+  // 10分の枠ごとの平均（[[日時, 値], ...] → グラフの0:00〜23:50の並び）。表示している日の分だけ
+  const average10 = (rows) => {
+    const buckets = {};     // 10分の枠の番号 → その枠の値
+    for (const [ts, v] of rows) {
+      if (fmt(ts) !== day) continue;
+      const k = Math.floor((ts.getHours() * 60 + ts.getMinutes()) / 10);
+      (buckets[k] = buckets[k] || []).push(v);
+    }
+    return slots.map((_, k) => buckets[k]
+      ? Math.round(buckets[k].reduce((a, b) => a + b, 0) / buckets[k].length * 10) / 10 : null);
+  };
+  // 同じ機器の「温度」と「湿度」の線がそろっていれば、同じ時刻どうしで露点温度を計算して露点温度のグラフに出す
+  // （例: 「GR-3500 温度」と「GR-3500 湿度」→「GR-3500 露点温度」。色は温度の線と同じ）
+  imported.forEach((col, i) => {
+    if (col.unit !== "℃") return;
+    const name = col.label.replace(/ 温度(\(\d+\))?$/, "");
+    const humCol = imported.find((x) => x.unit === "%" && x.label.replace(/ 湿度(\(\d+\))?$/, "") === name);
+    if (!humCol || name === col.label) return;
+    const humAt = new Map(humCol.rows.map(([ts, v]) => [ts.getTime(), v]));
+    const rows = [];
+    for (const [ts, t] of col.rows) {
+      const d = dewPoint(t, humAt.get(ts.getTime()));
+      if (d != null) rows.push([ts, d]);
+    }
+    const color = IMPORT_COLORS[i % IMPORT_COLORS.length];
+    dewChart.data.datasets.push({
+      label: `${name} 露点温度`, data: average10(rows), borderColor: color, backgroundColor: color,
+      pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, imported: true });
+  });
+  imported.forEach((col, i) => {
+    const buckets = {};     // 10分の枠の番号 → その枠の値
+    for (const [ts, v] of col.rows) {
+      if (fmt(ts) !== day) continue;
+      const k = Math.floor((ts.getHours() * 60 + ts.getMinutes()) / 10);
+      (buckets[k] = buckets[k] || []).push(v);
+    }
+    const data = slots.map((_, k) => buckets[k]
+      ? Math.round(buckets[k].reduce((a, b) => a + b, 0) / buckets[k].length * 10) / 10 : null);
+    const color = IMPORT_COLORS[i % IMPORT_COLORS.length];
+    (col.unit === "%" ? humChart : tempChart).data.datasets.push({
+      label: col.label, data, borderColor: color, backgroundColor: color,
+      pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, imported: true });
+  });
+  // 取り込んだ線があるときは、ラズパイの線の名前を「SHT31」にして見分けやすくする
+  if (imported.length) {
+    tempChart.data.datasets[2].label = humChart.data.datasets[0].label = dewChart.data.datasets[0].label = "SHT31";
+  }
+}
+
+// 取り込んだ記録の窓口（ラズパイ）
+const IMPORT_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/import") : "";
+// 前の版でこのブラウザに保存していた記録は、もう使わないので消しておく
+try { localStorage.removeItem("temp-monitor-import"); } catch (e) { /* 使えないブラウザは何もしない */ }
+
+// 自分で取り込んだ・消した直後は、公開サイトに反映されるまで（最大10分ほど）古い記録が読めてしまう。
+// そのあいだは読み直さず、自分の画面の線をそのまま出しておく
+let importLocalUntil = 0;
+
+// 公開サイトに載っている、取り込んだ記録を読む（ページを開いたときと10分ごと）
+async function loadImported() {
+  if (Date.now() < importLocalUntil) return;
+  let d = null;
+  try {
+    d = await getJson("data/import.json");
+  } catch (e) {
+    return;     // 読めないときは、今出ている線をそのままにする
+  }
+  imported = d && d.columns
+    ? d.columns.map((col) => ({ ...col, rows: col.rows.map(([t, v]) => [new Date(t), v]) })) : [];
+  if (imported.length) showImportMsg("取り込んだ記録を表示しています");
+  else { $("importMsg").hidden = true; $("importClear").hidden = true; }
+  load();
+}
+
+// 取り込んだ記録の名前と期間を、ボタンの下に出す
+function showImportMsg(head) {
+  const times = imported.flatMap((col) => [col.rows[0][0], col.rows[col.rows.length - 1][0]]).sort((a, b) => a - b);
+  const msg = $("importMsg");
+  msg.hidden = false;
+  msg.className = "import-msg";
+  msg.textContent = `${head}：${imported.map((c) => `「${c.label}」`).join("")}`
+    + `（${fmt(times[0])}〜${fmt(times[times.length - 1])}）。前日・翌日で日を変えられます `;
+  // 押すと、取り込んだ記録の最初の日のグラフを出すボタン（今日の記録がないと線が見えないため）
+  const go = document.createElement("button");
+  go.textContent = "取り込んだ日を表示";
+  go.className = "import-go";
+  go.onclick = () => { day = fmt(times[0]); showHours(24); load(); };
+  msg.append(go);
+  $("importClear").hidden = false;
+}
+
+// 取り込み・削除には管理用パスワードがいる。まだ入れていなければ、管理欄を開いて入れてもらう
+function needAdminPw() {
+  if (adminPw) return false;
+  const msg = $("importMsg");
+  msg.hidden = false;
+  msg.className = "import-msg error";
+  msg.textContent = "取り込み・削除には管理用パスワードが必要です。下の「管理」で入力して「表示」を押してから、もう一度押してください";
+  document.querySelector("details.admin").open = true;
+  $("pw").focus();
+  return true;
+}
+
+// ボタン: ファイルを選ぶ → 読んでラズパイに送る（前に取り込んだ記録とは入れ替える）
+$("importBtn").onclick = () => { if (!needAdminPw()) $("importFile").click(); };
+$("importFile").onchange = async (e) => {
+  const added = [];
+  for (const file of e.target.files) {
+    try {
+      added.push(...parseCsv(await readText(file), file.name));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  e.target.value = "";      // 同じファイルをもう一度選べるようにする
+  const msg = $("importMsg");
+  msg.hidden = false;
+  if (!added.length) {
+    msg.className = "import-msg error";
+    msg.textContent = "取り込める記録が見つかりませんでした（1列目が日時のCSVか確認してください）";
+    return;
+  }
+  // 一度に複数のファイル（例: 10/31 と 11/1）を選んだときは、同じ名前の線を1本にまとめる
+  const cols = [];
+  for (const col of added) {
+    const same = cols.find((x) => x.label === col.label);
+    if (same) same.rows = same.rows.concat(col.rows).sort((a, b) => a[0] - b[0]);
+    else cols.push({ ...col });
+  }
+  msg.className = "import-msg";
+  msg.textContent = "ラズパイに送っています...";
+  let saved;
+  try {
+    saved = await adminCall("PUT", { columns: cols.map((c) => ({ ...c, rows: c.rows.map(([ts, v]) => [ts.getTime(), v]) })) },
+                            IMPORT_URL);
+  } catch (err) {
+    msg.className = "import-msg error";
+    msg.textContent = `取り込めませんでした：${err.message}`;
+    return;
+  }
+  // ラズパイが前の記録と足し合わせた、全部の記録を出す
+  imported = saved.columns.map((col) => ({ ...col, rows: col.rows.map(([t, v]) => [new Date(t), v]) }));
+  importLocalUntil = Date.now() + 15 * 60 * 1000;
+  showImportMsg("取り込みました（見ている人全員のグラフに、1〜2分で出ます）");
+  // 今回取り込んだ記録の最初の日を表示する
+  day = fmt(cols.flatMap((col) => col.rows.map(([ts]) => ts)).reduce((a, b) => (a < b ? a : b)));
+  showHours(24);
+  load();
+};
+// ボタン: 取り込んだ線を消す（ラズパイの記録も消すので、全員のグラフから消える）
+$("importClear").onclick = async () => {
+  if (needAdminPw()) return;
+  if (!confirm("取り込んだ線を消します。見ている人全員のグラフから消えます。よろしいですか？")) return;
+  try {
+    await adminCall("DELETE", null, IMPORT_URL);
+  } catch (err) {
+    $("importMsg").className = "import-msg error";
+    $("importMsg").textContent = `消せませんでした：${err.message}`;
+    return;
+  }
+  imported = [];
+  importLocalUntil = Date.now() + 15 * 60 * 1000;
+  $("importClear").hidden = true;
+  $("importMsg").hidden = true;
+  load();
+};
+
+// ============================================================
+// グラフの拡大
+// ============================================================
+
+// 片方のグラフを拡大・移動したら、もう片方も同じ範囲にする
+function syncRange(src) {
+  const { min, max } = src.scales.x;
+  for (const c of allCharts()) if (c !== src) c.zoomScale("x", { min, max }, "none");
+}
+
+// ボタン: 最後の記録を右端にして、h 時間分を表示する（24 なら全体に戻す）
+function showHours(h) {
+  if (h >= 24) {
+    for (const c of allCharts()) c.resetZoom("none");
+    return;
+  }
+  const temps = tempChart.data.datasets[2].data;
+  let last = temps.length - 1;
+  while (last > 0 && temps[last] == null) last--;      // 最後の記録の位置
+  const n = h * 6;                                     // h 時間 = 6 × h マス
+  const max = Math.max(last, n);
+  for (const c of allCharts()) c.zoomScale("x", { min: max - n, max }, "none");
+}
+// ボタン: 表示している範囲を、幅の半分だけ前（dir = -1）か次（dir = 1）へ動かす
+function moveRange(dir) {
+  const { min, max } = topChart().scales.x;
+  const width = max - min;
+  const step = Math.max(1, Math.round(width / 2));
+  const newMin = Math.min(Math.max(min + dir * step, 0), slots.length - 1 - width);
+  for (const c of allCharts()) c.zoomScale("x", { min: newMin, max: newMin + width }, "none");
+}
+document.querySelectorAll(".zoombar button").forEach((b) => {
+  b.onclick = () => b.dataset.move ? moveRange(Number(b.dataset.move)) : showHours(Number(b.dataset.hours));
+});
+$("zoomHint").textContent = isTouch
+  ? "2本指で拡大・1本指で左右に移動"
+  : "ドラッグで範囲を選んで拡大・Shift＋ドラッグで移動・Ctrl＋ホイールで拡大縮小";
+
+// ボタン: 上の段（温度か露点温度の、今出している方）と湿度のグラフを1枚の画像（PNG）にまとめて保存する
+// （拡大しているときは、見えている範囲）
+function saveGraph() {
+  const r = window.devicePixelRatio || 1;       // 画面の細かさ（グラフはこの倍率で描かれている）
+  const pad = 20 * r, font = getComputedStyle(document.body).fontFamily;
+  const charts = [topChart(), humChart];
+  // マウスを乗せたときの吹き出しは画像に入れない
+  for (const c of charts) {
+    c.setActiveElements([]);
+    c.tooltip.setActiveElements([], { x: 0, y: 0 });
+    c.update("none");
+  }
+  const w = Math.max(...charts.map((c) => c.canvas.width)) + pad * 2;
+  const h = pad + 30 * r + charts.reduce((sum, c) => sum + 26 * r + c.canvas.height + pad, 0);
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const g = cv.getContext("2d");
+  g.fillStyle = css("--card");                  // 背景（画面と同じ色）
+  g.fillRect(0, 0, w, h);
+  g.textBaseline = "top";
+  // 見出し: 温湿度モニター 設置場所 日付
+  const place = $("place").textContent;
+  g.fillStyle = css("--text");
+  g.font = `bold ${18 * r}px ${font}`;
+  g.fillText(`温湿度モニター${place ? "　" + place : ""}　${day}`, pad, pad);
+  // グラフを上から順に貼る（それぞれの上に、画面と同じ小見出しを書く）
+  let y = pad + 30 * r;
+  for (const c of charts) {
+    g.fillStyle = css("--muted");
+    g.font = `${13 * r}px ${font}`;
+    g.fillText(c.canvas.closest(".chart-card").querySelector(".label").textContent, pad, y);
+    g.drawImage(c.canvas, pad, y + 26 * r);
+    y += 26 * r + c.canvas.height + pad;
+  }
+  // できた画像をダウンロードさせる
+  cv.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `temp-humidity_${day}.png`;   // 日本語の名前だと付かないブラウザがあるので英字にする
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+}
+
+// 表示する日を n 日ずらす（前日 = -1、翌日 = +1）。日を変えたら拡大は元に戻す
+function shift(n) {
+  const t = new Date(day + "T00:00:00");
+  t.setDate(t.getDate() + n);
+  day = fmt(t);
+  showHours(24);
+  load();
+}
+
+// ボタンを押したときの動き
+$("prev").onclick = () => shift(-1);
+$("saveGraph").onclick = saveGraph;
+$("next").onclick = () => shift(1);
+$("today").onclick = () => { day = fmt(new Date()); showHours(24); load(); };
+$("day").onchange = (e) => { if (e.target.value) { day = e.target.value; showHours(24); load(); } };
+
+// ============================================================
+// 管理（警報の設定・警報メールの宛先）
+//   ラズパイの窓口 /api/settings・/api/recipients に、管理用パスワードを付けて頼む
+//   パスワードはこのページを開いている間だけ覚えておく（保存はしない）
+// ============================================================
+const ADMIN_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/recipients") : "";
+const SETTINGS_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/settings") : "";
+let adminPw = "";
+// 警報の設定の項目（画面の入力欄の id は "s_" + 名前）
+const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min",
+                      "hum_alarm", "hum_warn", "hum_hysteresis", "sensor_fail_min",
+                      "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp",
+                      "cal_ktc_temp"];
+
+// メッセージを表示する（isError が true なら注意の色）
+function adminMsg(text, isError) {
+  $("adminMsg").textContent = text;
+  $("adminMsg").className = "msg" + (isError ? " error" : "");
+}
+
+// ラズパイの窓口を呼ぶ。method は "GET"（表示）"POST"（追加）"PUT"（変更）"DELETE"（削除）
+// data は送る内容、url は窓口（省略すると宛先の窓口）
+async function adminCall(method, data, url = ADMIN_URL) {
+  if (!url) throw new Error("ラズパイの窓口が設定されていません");
+  let res;
+  try {
+    res = await fetch(url, {
+      method, cache: "no-store",
+      headers: { "Authorization": `Bearer ${adminPw}`, "Content-Type": "application/json" },
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  } catch (e) {
+    throw new Error("ラズパイにつながりません。電源とネットを確認してください");
+  }
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || `エラーが起きました（${res.status}）`);
+  return d;
+}
+
+// 宛先の一覧を表示する（アドレスは textContent で入れ、文字をそのまま表示する）
+function renderRecipients(list) {
+  const ul = $("rcpts");
+  ul.replaceChildren();
+  for (const email of list) {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.textContent = email;
+    const btn = document.createElement("button");
+    btn.textContent = "削除";
+    btn.onclick = async () => {
+      if (!confirm(`${email} を宛先から削除しますか？`)) return;
+      try {
+        renderRecipients((await adminCall("DELETE", { email })).recipients);
+        adminMsg(`${email} を削除しました`);
+      } catch (e) { adminMsg(e.message, true); }
+    };
+    li.append(span, btn);
+    ul.append(li);
+  }
+  $("addForm").hidden = false;
+  $("rcptsTitle").hidden = false;
+}
+
+// 警報メールを止めているかを表示する（mail_pause_until: 0 = 送信中、-1 = 再開するまで停止、それ以外 = その時刻まで停止）
+function renderPause(until) {
+  const now = Date.now() / 1000;
+  let text = "送信中", on = true;
+  if (until === -1) { text = "停止中（再開するまで止めています）"; on = false; }
+  else if (until > now) {
+    const t = new Date(until * 1000);
+    text = `停止中（${t.getMonth() + 1}/${t.getDate()} ${t.toTimeString().slice(0, 5)} まで止めています）`;
+    on = false;
+  }
+  $("pauseState").textContent = "今の状態：" + text;
+  $("pauseState").className = "pause-state " + (on ? "on" : "off");
+  $("pauseBox").hidden = false;
+}
+
+// 警報の設定を入力欄に入れる
+function renderSettings(st) {
+  renderPause(st.mail_pause_until);
+  for (const k of SETTING_KEYS) $("s_" + k).value = st[k];
+  $("s_mail_on_warn").checked = !!st.mail_on_warn;
+  $("s_hum_enabled").checked = !!st.hum_enabled;
+  $("s_location_name").value = st.location_name || "";
+  showPlace(st.location_name || "");
+  $("settingsForm").hidden = false;
+}
+
+// 設定のメッセージを表示する（isError が true なら注意の色）
+function settingsMsg(text, isError) {
+  $("settingsMsg").textContent = text;
+  $("settingsMsg").className = "msg" + (isError ? " error" : "");
+}
+
+// 「表示」: パスワードを確かめて、警報の設定と宛先の一覧を出す
+$("pwForm").onsubmit = async (e) => {
+  e.preventDefault();
+  adminPw = $("pw").value;
+  adminMsg("確認中...");
+  try {
+    renderRecipients((await adminCall("GET")).recipients);
+    renderSettings((await adminCall("GET", null, SETTINGS_URL)).settings);
+    adminMsg("");
+    settingsMsg("");
+  } catch (err) {
+    $("rcpts").replaceChildren();
+    $("addForm").hidden = true;
+    $("rcptsTitle").hidden = true;
+    $("settingsForm").hidden = true;
+    $("pauseBox").hidden = true;
+    adminMsg(err.message, true);
+  }
+};
+
+// 「1時間止める」「再開するまで止める」「再開する」: 警報メールを止める・再開する
+document.querySelectorAll("[data-pause]").forEach((b) => {
+  b.onclick = async () => {
+    const hours = Number(b.dataset.pause);
+    if (hours !== 0 && !confirm("警報・注意・継続・回復・センサー異常のメールを、全部止めます。よろしいですか？")) return;
+    $("pauseMsg").textContent = "変更中...";
+    $("pauseMsg").className = "msg";
+    try {
+      renderPause((await adminCall("PUT", { pause_hours: hours }, SETTINGS_URL)).settings.mail_pause_until);
+      $("pauseMsg").textContent = hours === 0 ? "再開しました（1分以内に反映されます）" : "止めました（1分以内に反映されます）";
+    } catch (err) {
+      $("pauseMsg").textContent = err.message;
+      $("pauseMsg").className = "msg error";
+    }
+  };
+});
+
+// 「設定を保存」: 入力した設定をラズパイに保存する
+$("settingsForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const data = { mail_on_warn: $("s_mail_on_warn").checked, hum_enabled: $("s_hum_enabled").checked,
+                 location_name: $("s_location_name").value };
+  for (const k of SETTING_KEYS) data[k] = Number($("s_" + k).value);
+  settingsMsg("保存中...");
+  try {
+    renderSettings((await adminCall("PUT", data, SETTINGS_URL)).settings);
+    settingsMsg("保存しました。警報の判定にはすぐ反映され、グラフの線は1〜2分で変わります");
+    setTimeout(load, 90 * 1000);   // 公開サイトの更新を待ってからグラフを読み直す
+  } catch (err) { settingsMsg(err.message, true); }
+};
+
+// 「追加」: 入力したアドレスを宛先に加える（追加したアドレスにはお知らせメールが届く）
+$("addForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $("newEmail").value.trim();
+  if (!email) return;
+  adminMsg("追加中...");
+  try {
+    const d = await adminCall("POST", { email });
+    renderRecipients(d.recipients);
+    $("newEmail").value = "";
+    adminMsg(d.notified ? `${email} を追加し、お知らせメールを送りました`
+                        : `${email} を追加しました（お知らせメールは送れませんでした）`);
+  } catch (err) { adminMsg(err.message, true); }
+};
+
+// ---- ページを開いたときに始まる処理 ----
+buildCharts();
+buildAccelChart();
+// 温度・露点温度の切り替えボタン（前に選んだ方を覚えておく）
+document.querySelectorAll("[data-top]").forEach((b) => { b.onclick = () => setTop(b.dataset.top); });
+let savedTop = "temp";
+try { savedTop = localStorage.getItem("temp-monitor-top") === "dew" ? "dew" : "temp"; } catch (e) { /* 使えなければ温度 */ }
+setTop(savedTop);
+loadImported();                          // 取り込んだCSVの記録があれば、グラフに出す
+setInterval(loadImported, 10 * 60 * 1000);   // 取り込んだ記録は10分ごとに読み直す（ほかの人が取り込んだとき用）
+setInterval(load, 60 * 1000);   // グラフは1分ごとに読み直す
+loadNow().then(load);
+setInterval(loadNow, 5 * 1000);  // 現在値は5秒ごとに読み直す
+</script>
+</body>
+</html>
