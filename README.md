@@ -40,6 +40,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `alarm_settings.py` | 警報の設定（2段階の温度・湿度の基準など）と状態の判定 |
 | `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
+| `android/` | Android アプリ（ラズパイの画面をアプリで表示する） |
 | `web/app.py` | サイト（Flask）。画面は `web/index.html`、部品とアイコンは `web/static/` |
 | `systemd/` | 自動起動・定期実行の設定 |
 
@@ -122,7 +123,17 @@ http://raspberrypi.local:8000 から追加すると、ただのブックマー�
 
 アイコンから開くと、アドレスバーのない全画面で表示される。前に追加したアイコンがブラウザの画面で開く場合は、そのアイコンを消して追加し直す。
 
-### 7. Googleドライブへのバックアップ（任意）
+### 7. Android アプリ（任意）
+
+ラズパイの画面を全画面で表示する Android アプリ（`android/`）。ブラウザを使わずに開ける。iPhone 用はない。
+
+- `android/` を直して main に送ると、GitHub Actions が APK を作り、Releases の「android-latest」に置く
+- スマホで https://github.com/omoti12/temp-humidity-monitor/releases/tag/android-latest を開き、`TempMonitor.apk` をダウンロードして入れる
+  （「この提供元のアプリを許可」を聞かれたらオンにする）
+- 見るには、スマホの Tailscale が「Connected」になっている必要がある
+- 署名の鍵はリポジトリに置かず、作るたびに試作用の鍵で署名する。そのため **新しい版を入れるときは、古いアプリを消してから入れる**
+
+### 8. Googleドライブへのバックアップ（任意）
 
 ```
 rclone config        # n → 名前 gdrive → 種類 drive → あとはEnter
