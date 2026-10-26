@@ -1,15 +1,15 @@
 <!doctype html>
 <!--
   ============================================================
-  公開サイトの画面（https://omoti12.github.io/temp-humidity-monitor/）
+  温湿度モニターの画面（ラズパイの中の web/app.py が表示する。インターネットには公開しない）
+    社内のネットワークから : http://raspberrypi.local:8000
+    Tailscale の端末から   : https://raspberrypi.tailfa1dcc.ts.net
 
-  データの読み先
-    ・現在値：ラズパイの窓口（NOW_URL）を5秒ごとに読む
-              つながらないときは data/latest.json（10分ごとに更新）の値を表示する
-    ・グラフ：data/日付.json（ラズパイが10分ごとに送る）を1分ごとに読み直す
+  データの読み先（どれもラズパイの web/app.py）
+    ・現在値：/api/now を5秒ごとに読む
+    ・グラフ：/data/日付.json（1分ごとの記録を10分ごとにまとめたもの）を1分ごとに読み直す
 
-  このファイルを直したら、ラズパイで git pull すると、次の公開（10分以内）で反映される
-  （すぐ反映したいときは python3 ~/temp-monitor/pages/publish.py）
+  このファイルを直したら、ラズパイで git pull して、ブラウザで再読み込みすると反映される
   ============================================================
 -->
 <html lang="ja">
@@ -18,6 +18,13 @@
 <!-- スマホでも見やすい幅で表示する -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>温湿度モニター</title>
+<!-- スマホのホーム画面に置いたとき、アプリのように表示するための設定（PWA） -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#d9480f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="温湿度">
 <!-- グラフを描く部品（Chart.js）。サイトと一緒に置いてある -->
 <script src="chart.umd.js"></script>
 <!-- グラフを拡大・移動する部品（hammer.min.js はスマホの指の操作用。zoom より先に読む） -->
@@ -314,14 +321,14 @@ function buildCharts() {
   });
 }
 
-// ラズパイが10分ごとに data/ 以下のJSONを更新する。キャッシュを避けるため時刻を付けて読む
+// ラズパイの /data/ 以下のJSONを読む。キャッシュを避けるため時刻を付けて読む
 async function getJson(path) {
   const res = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" });
   return res.ok ? res.json() : null;
 }
 
-// ラズパイの現在値の窓口（Tailscale Funnel のURL + /api/now）。空なら10分ごとのデータだけで表示する
-const NOW_URL = "https://raspberrypi.tailfa1dcc.ts.net/api/now";
+// ラズパイの現在値の窓口（この画面と同じラズパイの /api/now）
+const NOW_URL = "/api/now";
 let live = false;   // ラズパイから直接現在値を読めているか
 
 // 上の3つのカードと最終測定の時刻を書き換える
@@ -337,7 +344,7 @@ function showLatest(l, isLive) {
   $("stale").hidden = Date.now() - ts < (isLive ? 5 : 30) * 60 * 1000;
   $("stale").textContent = `${isLive ? 5 : 30}分以上データが更新されていません`;
   $("updated").textContent = `最終測定 ${fmt(ts)} ${ts.toTimeString().slice(0, isLive ? 8 : 5)}`
-    + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
+    + (isLive ? "（リアルタイム）" : "（1分ごとの記録）");
 }
 
 // 湿度の状態（高湿注意・高湿警報）を、湿度の数字の下に出す。正常なら出さない
@@ -605,8 +612,8 @@ $("settingsForm").onsubmit = async (e) => {
   settingsMsg("保存中...");
   try {
     renderSettings((await adminCall("PUT", data, SETTINGS_URL)).settings);
-    settingsMsg("保存しました。警報の判定にはすぐ反映され、グラフの線は1〜2分で変わります");
-    setTimeout(load, 90 * 1000);   // 公開サイトの更新を待ってからグラフを読み直す
+    settingsMsg("保存しました。警報の判定には1分以内に反映されます");
+    load();   // グラフの線をすぐ描き直す
   } catch (err) { settingsMsg(err.message, true); }
 };
 

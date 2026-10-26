@@ -8,7 +8,7 @@
 #   ・湿度から状態（正常 / 高湿注意 / 高湿警報）を判定する（湿度は上限だけ）
 #
 # 使っているところ
-#   sht31_logger.py（警報の判定とメール）、sht31_graph.py・web/app.py・pages/publish.py（グラフの線）
+#   sht31_logger.py（警報の判定とメール）、sht31_graph.py・web/app.py（グラフの線）
 # ============================================================
 import json
 import os

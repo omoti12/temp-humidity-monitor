@@ -1,8 +1,10 @@
 # 温湿度モニター
 
 Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごとに記録し、Webサイトで確認できるようにする試作システム。
+**サイトはラズパイの中だけで動かし、インターネットには公開しない。**
 
-**公開サイト：https://omoti12.github.io/temp-humidity-monitor/**
+- 社内のネットワーク（ラズパイと同じWi-Fiなど）から：http://raspberrypi.local:8000
+- 外から（Tailscale にログインした端末だけ）：https://raspberrypi.tailfa1dcc.ts.net
 
 ![スマホ表示](docs/screenshot_phone.png)
 
@@ -12,22 +14,22 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 - 温度の警報は2段階（注意・警報）。初期値は 30℃以上で【高温警報】、28℃以上で【高温注意】、22℃以下で【低温注意】、21℃以下で【低温警報】のメールを送信（正常に戻ったら【回復】メール、続けば60分ごとに再通知）
 - 湿度にも上限の警報がある（初期値は 65%以上で【高湿注意】、70%以上で【高湿警報】。使わない設定にもできる）
 - センサーで測れない状態が5分続いたら【センサー異常】、また測れるようになったら【回復】のメールを送る
-- 警報の設定とメールの宛先は、公開サイトの管理欄からブラウザで変更できる
+- サイトで現在の温度・湿度・状態（5秒ごとに更新）と、10分ごとのグラフを表示（スマホ対応）
+- グラフは拡大できる（表示範囲のボタン、PCはドラッグ、スマホは2本指）。拡大中は「◀ 前へ」「次へ ▶」ボタンで左右に動かせる
+- 警報の設定とメールの宛先は、サイトの管理欄からブラウザで変更できる
 - 設置場所の名前を管理欄で登録すると、サイトの一番上とメールの件名（例:［第1倉庫］【高温警報】…）に出る
 - 警報・注意・センサー異常のメールは、管理欄のボタンで止められる（1時間 / 再開するまで）。止めている間も測定・記録は続く
-- Webサイトで現在の温度・湿度・状態と、10分ごとのグラフを表示（スマホ対応）
-  - GitHub Pages：どこからでも見られる。グラフは10分ごと、現在値は5秒ごと（ラズパイから直接読む）
-  - ラズパイ内のサイト（`http://ラズパイのIP:8000`）：同じネットワーク内から。1分ごとに更新
-- グラフは拡大できる（表示範囲のボタン、PCはドラッグ、スマホは2本指）。拡大中は「◀ 前へ」「次へ ▶」ボタンで左右に動かせる
+- スマホのホーム画面にアイコンを置いて、アプリのように開ける（PWA）
 - 10分ごとにグラフ画像（PNG）を作成。ラズパイにつないだモニターで表示できる
-- 1時間ごとに記録をGoogleドライブへバックアップ
 
 ```
-センサー ─▶ ラズパイ（1分ごとに記録・警報メール）
-              ├─ 10分ごと ─▶ GitHub Pages（どこからでも閲覧）
-              ├─ 現在値 ─▶ Tailscale Funnel（/api/now だけ公開）─▶ GitHub Pages の画面
-              └─ 1時間ごと ─▶ Googleドライブ（バックアップ）
+センサー ─▶ ラズパイ（記録・警報メール・サイト）
+              ├─ 社内のネットワーク ─────────────▶ スマホ・PC（http://raspberrypi.local:8000）
+              ├─ Tailscale（暗号化した専用の通り道）─▶ Tailscale を入れたスマホ・PC（外からでも）
+              └─ 警報メール ─▶ Gmail ─▶ 宛先
 ```
+
+インターネットの他の人からは見えない。クラウドにもデータを置かない（外のサービスを通るのは警報メールだけ）。
 
 ## 構成
 
@@ -35,19 +37,20 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 |---|---|
 | `sht31_logger.py` | 測定・CSV記録・警報メール |
 | `netcheck.py` | ネットの見張り役（つながらないときに、つなぎ直し・再起動） |
-| `alarm_settings.py` | 警報の設定（2段階の温度の基準など）と状態の判定 |
+| `alarm_settings.py` | 警報の設定（2段階の温度・湿度の基準など）と状態の判定 |
 | `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
-| `pages/` | GitHub Pages 用のサイトと公開スクリプト |
-| `web/` | ラズパイ内で動くサイト（Flask） |
+| `web/app.py` | サイト（Flask）。画面は `web/index.html`、部品とアイコンは `web/static/` |
 | `systemd/` | 自動起動・定期実行の設定 |
 
 記録先は `/home/iot-user/templog/`（SDカード）。
-現在値 `now.json` とグラフ画像 `graph.png` は `/dev/shm/temp-monitor/`（メモリ上。再起動で消え、すぐ作り直される）。プログラムは `/home/iot-user/temp-monitor/`（このリポジトリ）から直接動かす。
+現在値 `now.json` とグラフ画像 `graph.png` は `/dev/shm/temp-monitor/`（メモリ上。再起動で消え、すぐ作り直される）。
+設定（メール・宛先・警報の設定）は `/home/iot-user/.config/temp-monitor/`。
+プログラムは `/home/iot-user/temp-monitor/`（このリポジトリ）から直接動かす。
 
 ## 必要なもの
 
-- Raspberry Pi（ネット接続できること）
+- Raspberry Pi（Pi 5 で試作。現場にモニターを置かず VS Code でもつながないなら Zero 2 WH でも動く）
 - 温湿度センサー Adafruit SHT31-D（I2Cアドレス 0x45 で使用。ADDRピン未接続なら `sht31_logger.py` の `ADDR` を 0x44 に変更）
 - microSDカード（高耐久タイプ推奨）
 
@@ -55,12 +58,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 
 ユーザー名は `iot-user` 前提。違う場合は、各ファイルの `/home/iot-user` と `User=iot-user` を書き換える。
 
-### 1. GitHub の準備（PCで）
-
-- リポジトリを **Public** にする（Settings → General → 一番下の Danger Zone → Change visibility）
-  ※ 無料プランで GitHub Pages を使うため。サイトはURLを知っている人なら誰でも見られる
-
-### 2. インストール（ラズパイで）
+### 1. インストール（ラズパイで）
 
 ```
 sudo apt install git python3-smbus2 python3-matplotlib python3-flask python3-waitress fonts-noto-cjk rclone
@@ -69,19 +67,15 @@ git clone https://github.com/omoti12/temp-humidity-monitor.git /home/iot-user/te
 
 I2Cを有効にしておく（`sudo raspi-config` → Interface Options → I2C）。
 
-### 3. 自動起動の設定ファイルを入れる
+### 2. 自動起動の設定ファイルを入れる
 
 ```
-sudo cp /home/iot-user/temp-monitor/systemd/* /etc/systemd/system/
+sudo cp /home/iot-user/temp-monitor/systemd/*.service /home/iot-user/temp-monitor/systemd/*.timer /etc/systemd/system/
 ```
 
-パスワードは **コピーした先（/etc/systemd/system）** で書き換える。リポジトリ内のファイルには書かないこと。
+### 3. 警報メールの設定
 
-```
-sudo nano /etc/systemd/system/temp-web.service       # ラズパイ内サイトにパスワードをかけるとき
-```
-
-警報メールを使うときは、設定ファイルを作って送信元・アプリパスワード・宛先を書く：
+設定ファイルを作って、送信元・アプリパスワード・宛先・管理用パスワードを書く：
 
 ```
 mkdir -p ~/.config/temp-monitor
@@ -89,88 +83,57 @@ cp ~/temp-monitor/mail.env.example ~/.config/temp-monitor/mail.env
 chmod 600 ~/.config/temp-monitor/mail.env     # 自分だけが読めるようにする
 nano ~/.config/temp-monitor/mail.env
 python3 ~/temp-monitor/sht31_logger.py --test-mail   # テストメールを送る
-sudo systemctl restart sht31-logger
 ```
 
 Gmailの場合は、Googleアカウントで2段階認証をオンにして「アプリパスワード」を作り、それを使う。
+`ADMIN_PASSWORD` はサイトの管理欄（警報の設定・宛先・メールの一時停止）で使うパスワード（半角英数字で長めに）。
 
-#### サイトから警報の設定・メールの宛先を変更する
-
-公開サイトの一番下「管理（警報の設定・メールの宛先）」から、警報の温度の基準などの変更と、メールの宛先の追加・削除ができる。
-
-1. `~/.config/temp-monitor/mail.env` に `ADMIN_PASSWORD=（管理用パスワード）` を書く（半角英数字で長めに）
-2. 管理の窓口もインターネットから使えるようにする（現在値の窓口と同じ Tailscale Funnel）
-   ```
-   sudo tailscale funnel --bg --set-path /api/recipients http://127.0.0.1:8000/api/recipients
-   sudo tailscale funnel --bg --set-path /api/settings http://127.0.0.1:8000/api/settings
-   ```
-3. `sudo systemctl restart temp-web sht31-logger`
-
-- 追加したアドレスには「宛先に追加されました」というお知らせメールが届く
-- 宛先は `~/.config/temp-monitor/recipients.json` に保存される（一度でも変更すると、`MAIL_TO` の代わりにこちらが使われる）
-- 注意の段階がいらないときは、注意と警報を同じ温度にする（その温度でいきなり警報になる）
-- 警報の設定は `~/.config/temp-monitor/settings.json` に保存される。警報の判定には次の1分で反映され、公開サイトのグラフの線も1〜2分で変わる
-- パスワードを10分間に10回まちがえると、しばらく受け付けない。宛先は20件まで。最後の1件は削除できない
-
-### 4. 記録・警報・グラフを開始
+### 4. 記録・警報・サイト・グラフを開始
 
 ```
 sudo systemctl daemon-reload
 sudo systemctl enable --now sht31-logger temp-web sht31-graph.timer
 ```
 
-### 5. GitHub Pages で公開する
+社内のネットワークのブラウザで http://raspberrypi.local:8000 を開いて、温度が出れば成功。
 
-ラズパイがGitHubに書き込むための鍵を作る：
-
-```
-ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
-cat ~/.ssh/id_ed25519.pub
-```
-
-表示された1行（`ssh-ed25519 ...`）をコピーし、GitHubのリポジトリの
-Settings → Deploy keys → Add deploy key に貼り付ける。**「Allow write access」にチェックを入れる。**
-
-1回だけ手動で公開してみる（初回は `yes` と聞かれたら `yes`）：
+### 5. 外から見られるようにする（Tailscale。インターネットには公開しない）
 
 ```
-ssh -T git@github.com
-python3 /home/iot-user/temp-monitor/pages/publish.py
-```
-
-「公開しました」と出たら、GitHubの Settings → Pages で
-Source を「Deploy from a branch」、Branch を `gh-pages` / `/(root)` にして Save。
-数分後に https://omoti12.github.io/temp-humidity-monitor/ で見られる。
-
-10分ごとの自動公開を開始：
-
-```
-sudo systemctl enable --now pages-publish.timer
-```
-
-### 6. 現在値をリアルタイムで見られるようにする（Tailscale Funnel）
-
-GitHub Pages は更新回数に制限があるので、現在値だけはラズパイから直接読む。
-ラズパイ内サイトを起動し、その中の `/api/now`（現在値）だけをインターネットに公開する。
-
-```
-sudo systemctl enable --now temp-web
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up                 # 表示されたURLを開いてログイン
-sudo tailscale funnel --bg --set-path /api/now http://127.0.0.1:8000/api/now
+sudo tailscale set --ssh          # 外からコンソールでつなげるようにする（任意）
+sudo tailscale serve --bg 8000    # Tailscale の端末だけに https でサイトを見せる
 ```
 
-最後のコマンドで有効化のURLが表示されたら、開いて許可する。
-表示された `https://〜.ts.net/api/now` をブラウザで開き、現在値が出れば成功。
-そのURLを `pages/index.html` の `NOW_URL` に書いて push し、ラズパイで `git pull` すると、次の公開（10分以内）からサイトの現在値がリアルタイムになる。
+見る端末（スマホ・PC）にも Tailscale のアプリを入れて、同じネットワークにログインする。
+https://raspberrypi.tailfa1dcc.ts.net を開いて、温度が出れば成功。
 
-### 7. Googleドライブへのバックアップ
+`tailscale funnel`（インターネットへの公開）は使わない。`tailscale serve status` で
+「(tailnet only)」と出ていれば、Tailscale の端末だけに見えている。
+
+### 6. スマホのホーム画面に置く（任意）
+
+- iPhone（Safari）：共有ボタン →「ホーム画面に追加」
+- Android（Chrome）：右上の「︙」→「ホーム画面に追加」（または「アプリをインストール」）
+
+アイコンから開くと、アドレスバーのない全画面で表示される。
+
+### 7. Googleドライブへのバックアップ（任意）
 
 ```
 rclone config        # n → 名前 gdrive → 種類 drive → あとはEnter
 sudo systemctl enable --now templog-backup.timer
 rclone ls gdrive:温湿度記録   # CSVが並べば成功
 ```
+
+#### 管理欄について
+
+- 追加したアドレスには「宛先に追加されました」というお知らせメールが届く
+- 宛先は `~/.config/temp-monitor/recipients.json` に保存される（一度でも変更すると、`MAIL_TO` の代わりにこちらが使われる）
+- 注意の段階がいらないときは、注意と警報を同じ温度にする（その温度でいきなり警報になる）
+- 警報の設定は `~/.config/temp-monitor/settings.json` に保存される。警報の判定には次の1分で反映される
+- パスワードを10分間に10回まちがえると、しばらく受け付けない。宛先は20件まで。最後の1件は削除できない
 
 ## 更新するとき
 
@@ -185,7 +148,7 @@ sudo systemctl restart sht31-logger temp-web
 systemctl status sht31-logger           # 記録の動作状況
 tail -f /home/iot-user/templog/*.csv           # 記録の中身
 journalctl -u sht31-logger -f            # 警報メールの送信ログ
-journalctl -u pages-publish -n 20        # GitHub Pages への公開ログ
+journalctl -u temp-web -n 20             # サイトのログ（宛先・設定の変更）
 systemctl list-timers                    # 定期実行の予定
 ```
 
@@ -197,7 +160,6 @@ SDカードは書き込み回数で消耗するので、書き込みを減らし
 |---|---|---|
 | 記録（CSV） | SDカード | 1分に1行追記 |
 | 現在値（5秒ごと）・グラフ画像（10分ごと） | メモリ（`/dev/shm`） | SDカードには書かない |
-| 公開用の作業データ | SDカード | 10分ごと。古い版は毎日3時台に自動で掃除 |
 
 ほかに効果が大きいもの：
 
@@ -260,12 +222,11 @@ sudo systemctl enable --now netcheck
 
 ## セキュリティの設定
 
-- GitHub の main ブランチはルールセット（main-protect）で守っている。書き込めるのはリポジトリの持ち主と Claude だけで、
-  ラズパイの鍵（Deploy key）は gh-pages（公開サイト）にしか書き込めない
+- サイトはインターネットに公開しない。見られるのは社内のネットワークと Tailscale の端末だけ（`tailscale serve`。Funnel は使わない）
+- 設定と宛先は管理用パスワードが必要で、まちがいが続くと相手ごとに10分止める
+- GitHub の main ブランチはルールセット（main-protect）で守っている。書き込めるのはリポジトリの持ち主と Claude だけ
 - ラズパイでは sudo にパスワードが必要（`/etc/sudoers.d/010_iot-user-nopasswd` は削除済み）
 - Node-RED は使っていないので止めている（使うときは `sudo systemctl enable --now nodered`。その場合はパスワードを設定すること）
-- インターネットに出しているのは `/api/now`・`/api/settings`・`/api/recipients` の3つだけ（Tailscale Funnel）。
-  設定と宛先は管理用パスワードが必要で、まちがいが続くと相手ごとに10分止める
 - ソフトの更新はときどき `sudo apt update && sudo apt full-upgrade -y`
 
 ## 設定値
