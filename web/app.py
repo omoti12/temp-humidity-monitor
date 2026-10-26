@@ -47,7 +47,7 @@ STEP_MIN = 10          # グラフの間隔（分）
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 # 画面から読む部品（static/ にあるもの）。この一覧にないファイルは渡さない
 STATIC_FILES = {"chart.umd.js", "chartjs-plugin-zoom.min.js", "hammer.min.js",
-                "manifest.webmanifest", "icon-192.png", "icon-512.png",
+                "manifest.webmanifest", "icon-192.png", "icon-512.png", "sw.js",
                 "chart.js-LICENSE.md", "chartjs-plugin-zoom-LICENSE.md", "hammerjs-LICENSE.md"}
 
 # ログイン用。環境変数 WEB_USER / WEB_PASSWORD で設定する（未設定ならログインなし）
@@ -170,7 +170,14 @@ def static_file(name):
     # グラフの部品・アイコンなど（STATIC_FILES の一覧にあるものだけ）
     if name not in STATIC_FILES:
         abort(404)
-    return send_from_directory(os.path.join(WEB_DIR, "static"), name)
+    resp = send_from_directory(os.path.join(WEB_DIR, "static"), name)
+    # スマホにアプリとして認めてもらうため、設定ファイル（manifest）の種類を正しく伝える
+    if name == "manifest.webmanifest":
+        resp.headers["Content-Type"] = "application/manifest+json"
+    # サービスワーカーは、直したときにすぐ入れ替わるよう、保存させない
+    if name == "sw.js":
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 def latest_reading(rows, day):

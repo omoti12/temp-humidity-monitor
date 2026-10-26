@@ -632,6 +632,10 @@ $("addForm").onsubmit = async (e) => {
   } catch (err) { adminMsg(err.message, true); }
 };
 
+// スマホのホーム画面に置いたとき、アプリとして扱ってもらうための部品（sw.js）を登録する
+// （https のアドレスで開いたときだけ使える。http では何もしない）
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
 // ---- ページを開いたときに始まる処理 ----
 buildCharts();
 setInterval(load, 60 * 1000);   // グラフは1分ごとに読み直す
