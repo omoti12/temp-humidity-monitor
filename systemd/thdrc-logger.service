@@ -14,6 +14,10 @@ Description=THD-R-C (4-20mA) comparison logger
 [Service]
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/thdrc_logger.py
 Environment=LOG_DIR=/home/iot-user/templog
+# GPIO の部品（lgpio）は作業用のファイルを今いるフォルダに作る。systemd から起動すると
+# 今いるフォルダが / （書き込めない）になり GPIO が使えないので、書き込める場所を指定する
+WorkingDirectory=/home/iot-user
+Environment=LG_WD=/tmp
 # 止まったら必ず再起動する（10秒待ってから）
 Restart=always
 RestartSec=10
