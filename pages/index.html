@@ -28,14 +28,14 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
-    --hot-warn: #b08800; --cold-warn: #9775fa;
+    --hot-warn: #b08800; --cold-warn: #9775fa; --cmp: #0b7285;
   }
   /* スマホやPCがダークモードのときの色 */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
-      --hot-warn: #fcc419; --cold-warn: #d0bfff;
+      --hot-warn: #fcc419; --cold-warn: #d0bfff; --cmp: #66d9e8;
     }
   }
   /* ---- 全体のレイアウト ---- */
@@ -64,6 +64,15 @@
   .substatus { font-size: .95rem; font-weight: 700; margin-top: 2px; }
   #humStatus.高湿注意 { color: var(--hot-warn); } #humStatus.高湿警報 { color: var(--warn); }
   .stale { color: var(--warn); font-size: .85rem; margin-top: 4px; }
+  /* ---- SHT31 と比較用センサー THD-R-C の比べ（THD-R-C を動かしているときだけ出す）---- */
+  .compare { margin-bottom: 16px; }
+  .compare table { width: 100%; border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .compare th, .compare td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .compare th:first-child, .compare td:first-child { text-align: left; }
+  .compare th { color: var(--muted); font-weight: 400; font-size: .85rem; }
+  .compare td { font-size: 1.15rem; font-weight: 600; }
+  .compare .cmp { color: var(--cmp); }
+  .compare .note { color: var(--muted); font-size: .8rem; margin-top: 6px; }
   /* ---- 日付を選ぶボタンの並び ---- */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
   .controls button, .controls input, .controls a {
@@ -123,6 +132,17 @@
       <div class="substatus" id="humStatus" hidden></div></div>
     <div class="card"><div class="label">状態</div><div class="value" id="status">--</div>
       <div class="stale" id="stale" hidden>30分以上データが更新されていません</div></div>
+  </section>
+
+  <!-- SHT31 と比較用センサー THD-R-C の今の値の比べ（THD-R-C を動かしているときだけ出す。中身は showCompare() が書く） -->
+  <section class="card compare" id="compare" hidden>
+    <div class="label">SHT31 と THD-R-C の比較（今の値）</div>
+    <table>
+      <tr><th></th><th>SHT31</th><th>THD-R-C</th><th>差</th></tr>
+      <tr><td>温度</td><td id="cmpTs">--</td><td class="cmp" id="cmpTc">--</td><td id="cmpTd">--</td></tr>
+      <tr><td>湿度</td><td id="cmpHs">--</td><td class="cmp" id="cmpHc">--</td><td id="cmpHd">--</td></tr>
+    </table>
+    <div class="note">差 = THD-R-C − SHT31。THD-R-C の誤差は 温度 ±1.0℃・湿度 ±3%（説明書の値）</div>
   </section>
 
   <!-- 表示する日を切り替えるボタンと、CSVのダウンロード -->
@@ -299,6 +319,9 @@ function buildCharts() {
       { label: "高温注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
       { label: "低温注意", data: [], borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
       { label: "低温警報", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      // [7] 比較用センサー THD-R-C（記録がある日だけ出す）
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"), borderDash: [4, 3],
+        pointRadius: 1.5, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("℃"),
   });
@@ -309,6 +332,9 @@ function buildCharts() {
       // [1] [2] 湿度の警報（破線）と注意（点線）の基準（湿度の警報を使う設定のときだけ線が出る）
       { label: "高湿警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
       { label: "高湿注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      // [3] 比較用センサー THD-R-C（記録がある日だけ出す）
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"), borderDash: [4, 3],
+        pointRadius: 1.5, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("%"),
   });
@@ -340,6 +366,35 @@ function showLatest(l, isLive) {
     + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
 }
 
+// SHT31（s）と比較用センサー THD-R-C（c）の今の値を並べて出す。どちらかがなければ隠す
+function showCompare(s, c) {
+  $("compare").hidden = !(s && c);
+  if (!s || !c) return;
+  const val = (x, u) => (x == null ? "--" : `${x.toFixed(1)}${u}`);
+  // 差は「THD-R-C − SHT31」。THD-R-C が測れていない（断線など）ときは "--"
+  const diff = (a, b, u) => (a == null || b == null ? "--" : `${a - b >= 0 ? "+" : "-"}${Math.abs(a - b).toFixed(1)}${u}`);
+  $("cmpTs").textContent = val(s.temp, "℃");
+  $("cmpTc").textContent = val(c.temp, "℃");
+  $("cmpTd").textContent = diff(c.temp, s.temp, "℃");
+  $("cmpHs").textContent = val(s.hum, "%");
+  $("cmpHc").textContent = val(c.hum, "%");
+  $("cmpHd").textContent = diff(c.hum, s.hum, "%");
+}
+
+// グラフに THD-R-C の線を入れる（points は10分ごとの平均。記録がない日は線も凡例も出さない）
+// 記録がある日は、SHT31 の線の名前を「SHT31」にして見分けやすくする
+function showCompareLines(points) {
+  const byTime = Object.fromEntries((points || []).map((p) => [p.time, p]));
+  const has = Object.keys(byTime).length > 0;
+  const pick = (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null));
+  const t = tempChart.data.datasets, h = humChart.data.datasets;
+  t[7].data = pick("temp");
+  h[3].data = pick("hum");
+  t[7].hidden = h[3].hidden = !has;
+  t[2].label = has ? "SHT31" : "温度";
+  h[0].label = has ? "SHT31" : "湿度";
+}
+
 // 湿度の状態（高湿注意・高湿警報）を、湿度の数字の下に出す。正常なら出さない
 function showHumStatus(hs) {
   $("humStatus").hidden = !hs || hs === "正常";
@@ -362,9 +417,11 @@ async function loadNow() {
     const n = res.ok ? await res.json() : null;
     live = !!(n && n.latest);
     if (live) showLatest({ ...n.latest, time: n.latest.iso }, true);
+    showCompare(live ? n.latest : null, n && n.thdrc);   // THD-R-C を動かしていなければ隠れる
     if (n) showPlace(n.location);
   } catch (e) {
     live = false;   // ラズパイにつながらないときは10分ごとのデータを表示する
+    showCompare(null, null);
   }
 }
 
@@ -380,6 +437,7 @@ async function load() {
   }
   if (!info) return;
   const d = { ...info, points: dayData ? dayData.points : [] };
+  const CMP_POINTS = dayData ? dayData.thdrc_points : [];   // 比較用センサー THD-R-C の10分ごとの平均
 
   // ラズパイから直接読めていないときだけ、こちらの値を現在値として表示する
   if (d.latest && !live) showLatest(d.latest, false);
@@ -402,6 +460,7 @@ async function load() {
   humChart.data.datasets[2].data = slots.map(() => th.hum_warn ?? null);
   // 湿度の警報を使わない設定のときは、凡例にも出さない
   humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
+  showCompareLines(CMP_POINTS);
   tempChart.update();
   humChart.update();
 

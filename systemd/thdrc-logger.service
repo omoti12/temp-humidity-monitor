@@ -1,0 +1,24 @@
+# ============================================================
+# THD-R-C 比較用ロガー（thdrc_logger.py）を常に動かし続けるための設定
+#   ・ラズパイの電源を入れると自動で起動する
+#   ・止まったら10秒後に自動で再起動する
+# よく使うコマンド
+#   状態を見る   : systemctl status thdrc-logger
+#   ログを見る   : journalctl -u thdrc-logger -n 20
+#   止める       : sudo systemctl stop thdrc-logger（GP40T をほかのプログラムで使うとき）
+# このファイルを書き換えたら : sudo cp でコピー → sudo systemctl daemon-reload → 再起動
+# ============================================================
+[Unit]
+Description=THD-R-C (4-20mA) comparison logger
+
+[Service]
+ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/thdrc_logger.py
+Environment=LOG_DIR=/home/iot-user/templog
+# 止まったら必ず再起動する（10秒待ってから）
+Restart=always
+RestartSec=10
+# iot-user として動かす（root では動かさない）
+User=iot-user
+
+[Install]
+WantedBy=multi-user.target

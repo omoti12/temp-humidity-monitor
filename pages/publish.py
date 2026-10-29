@@ -35,6 +35,7 @@ from datetime import datetime
 # 1つ上のフォルダにある alarm_settings.py（警報の設定）を使えるようにする
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import alarm_settings  # noqa: E402
+import thdrc_data  # noqa: E402  比較用センサー THD-R-C の記録
 
 # ---- 設定値（環境変数で上書きできる）----
 # このリポジトリのフォルダ（このファイルの1つ上の階層）
@@ -126,10 +127,14 @@ def build():
         src = os.path.join(LOG_DIR, day + ".csv")
         out = os.path.join(data_dir, day + ".json")
         # CSVが前回から変わっていない日は作り直さない（ふだん作り直すのは今日の分だけ）
-        if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(src):
+        # 比較用センサー THD-R-C の記録が新しくなったときも作り直す
+        d = datetime.strptime(day, "%Y-%m-%d")
+        cmp_src = thdrc_data.csv_path(d)
+        changed = max(os.path.getmtime(src), os.path.getmtime(cmp_src) if os.path.exists(cmp_src) else 0)
+        if os.path.exists(out) and os.path.getmtime(out) >= changed:
             continue
         rows = load(src)
-        write_json(out, {"day": day, "points": every_10min(rows)})
+        write_json(out, {"day": day, "points": every_10min(rows), "thdrc_points": thdrc_data.every_10min(d)})
         shutil.copyfile(src, os.path.join(data_dir, day + ".csv"))
 
     for day in reversed(days):      # 一番新しい記録を「現在値」にする

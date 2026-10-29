@@ -38,6 +38,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import alarm_settings  # noqa: E402
 import alert_mail  # noqa: E402
+import thdrc_data  # noqa: E402  比較用センサー THD-R-C の記録
 
 # ---- 設定値（環境変数で上書きできる。temp-web.service の Environment= で設定）----
 LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
@@ -168,6 +169,9 @@ def api_data():
         # グラフに引く警報・注意の線（高温警報・高温注意・低温注意・低温警報）
         "thresholds": alarm_settings.thresholds(),
         "location": alarm_settings.load()["location_name"],    # 設置場所の名前
+        # 比較用センサー THD-R-C（10分ごとの平均と現在値）。動かしていなければ空
+        "thdrc_points": thdrc_data.every_10min(day),
+        "thdrc": thdrc_data.now_reading(),
     })
 
 
@@ -192,7 +196,8 @@ def now_reading():
 @app.route("/api/now")
 def api_now():
     """現在値だけを返す。GitHub Pages のサイトから読むため、別サイトからの読み込みを許可する。"""
-    resp = jsonify({"latest": now_reading(), "location": alarm_settings.load()["location_name"]})
+    resp = jsonify({"latest": now_reading(), "location": alarm_settings.load()["location_name"],
+                    "thdrc": thdrc_data.now_reading()})     # 比較用センサー（動かしていなければ null）
     # 別のサイト（omoti12.github.io）のページから読めるようにする
     resp.headers["Access-Control-Allow-Origin"] = "*"
     # 古い値が使い回されないよう、ブラウザや途中の経路に保存させない

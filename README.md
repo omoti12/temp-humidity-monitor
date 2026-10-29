@@ -38,6 +38,8 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `alarm_settings.py` | 警報の設定（2段階の温度の基準など）と状態の判定 |
 | `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
+| `thdrc_logger.py` | 比較用センサー THD-R-C（4〜20mA）の記録（RPi-GP40T で読む。使うときだけ） |
+| `thdrc_data.py` | THD-R-C の記録をサイト用に読む部品 |
 | `pages/` | GitHub Pages 用のサイトと公開スクリプト |
 | `web/` | ラズパイ内で動くサイト（Flask） |
 | `systemd/` | 自動起動・定期実行の設定 |
@@ -171,6 +173,24 @@ rclone config        # n → 名前 gdrive → 種類 drive → あとはEnter
 sudo systemctl enable --now templog-backup.timer
 rclone ls gdrive:温湿度記録   # CSVが並べば成功
 ```
+
+### 8. 比較用センサー THD-R-C（使うときだけ）
+
+4〜20mA 出力の温湿度センサー Autonics THD-R-C を RPi-GP40T（Ratoc）で読み、SHT31 と比べられるようにする。
+動かすと、サイトに「SHT31 と THD-R-C の比較（今の値）」の表と、グラフに THD-R-C の点線が出る（動かさなければ何も出ない）。
+
+- つなぎ方：THD-R-C の A（温度）→ GP40T の A0、B（湿度）→ A1。A0–G0 と A1–G1 のあいだに 150Ω。G0・G1 は THD-R-C の電源の −（GND）へ
+- GP40T を使うには SPI を有効にし、`/boot/firmware/config.txt` に `dtoverlay=spi0-0cs` を書いておく
+- 記録は `/home/iot-user/templog/thdrc/日付.csv`、現在値は `/dev/shm/temp-monitor/thdrc.json`
+
+```
+sudo cp ~/temp-monitor/systemd/thdrc-logger.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now thdrc-logger
+sudo systemctl restart temp-web
+```
+
+動いている間は GP40T を使っているので、ほかのプログラムで GP40T を読むときは `sudo systemctl stop thdrc-logger` で止める。
 
 ## 更新するとき
 
