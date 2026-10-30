@@ -1,10 +1,11 @@
-"""THD-R-C（比較用の4〜20mA温湿度センサー）の記録を読む部品。
+"""比較用センサー（THD-R-C・Pt100）の記録を読む部品。
 web/app.py と pages/publish.py の両方から使う。"""
 # ============================================================
 # このファイルの役割
-#   thdrc_logger.py が書いた記録を、サイト用に読み出す
-#     ・現在値   : /dev/shm/temp-monitor/thdrc.json（5秒ごとに上書き）
-#     ・1分ごと  : /home/iot-user/templog/thdrc/日付.csv
+#   比較用センサーのロガーが書いた記録を、サイト用に読み出す
+#     ・現在値   : /dev/shm/temp-monitor/名前.json（数秒ごとに上書き）
+#     ・1分ごと  : /home/iot-user/templog/名前/日付.csv
+#   名前は "thdrc"（thdrc_logger.py）または "pt100"（pt100_logger.py）
 #   SHT31 の記録（templog/日付.csv）とは別のフォルダに置くので、今までの記録には影響しない
 # ============================================================
 import csv
@@ -12,19 +13,30 @@ import json
 import os
 from datetime import datetime, timedelta
 
-LOG_DIR = os.path.join(os.environ.get("LOG_DIR", "/home/iot-user/templog"), "thdrc")
-NOW_PATH = os.environ.get("THDRC_NOW_PATH", "/dev/shm/temp-monitor/thdrc.json")
+LOG_BASE = os.environ.get("LOG_DIR", "/home/iot-user/templog")
+NOW_DIR = os.environ.get("COMPARE_NOW_DIR", "/dev/shm/temp-monitor")
 STEP_MIN = 10          # グラフの間隔（分）。SHT31 のグラフと同じ
+SENSORS = ("thdrc", "pt100")    # サイトに出す比較用センサーの名前
 
 
-def csv_path(day):
-    # その日のCSVファイルの場所（例: /home/iot-user/templog/thdrc/2026-10-29.csv）
-    return os.path.join(LOG_DIR, day.strftime("%Y-%m-%d") + ".csv")
+def log_dir(name):
+    # そのセンサーの記録フォルダ（例: /home/iot-user/templog/pt100）
+    return os.path.join(LOG_BASE, name)
 
 
-def load(day):
-    """その日のCSVを読んで [(日時, 温度, 湿度), ...] にする。測れなかった値は None"""
-    path = csv_path(day)
+def now_path(name):
+    # そのセンサーの現在値のファイル（例: /dev/shm/temp-monitor/pt100.json）
+    return os.path.join(NOW_DIR, name + ".json")
+
+
+def csv_path(name, day):
+    # その日のCSVファイルの場所（例: /home/iot-user/templog/pt100/2026-10-30.csv）
+    return os.path.join(log_dir(name), day.strftime("%Y-%m-%d") + ".csv")
+
+
+def load(name, day):
+    """その日のCSVを読んで [(日時, 温度, 湿度), ...] にする。測れなかった値・湿度のない記録は None"""
+    path = csv_path(name, day)
     if not os.path.exists(path):
         return []
     rows = []
@@ -42,10 +54,10 @@ def load(day):
     return rows
 
 
-def every_10min(day):
+def every_10min(name, day):
     """1分ごとの記録を10分単位にまとめた平均。[{"time": "10:30", "temp": .., "hum": ..}, ...]"""
     buckets = {}
-    for ts, t, h in load(day):
+    for ts, t, h in load(name, day):
         key = ts.replace(minute=ts.minute - ts.minute % STEP_MIN, second=0)
         buckets.setdefault(key, []).append((t, h))
     out = []
@@ -60,10 +72,10 @@ def every_10min(day):
     return out
 
 
-def now_reading():
-    """thdrc_logger.py が5秒ごとに書く現在値。2分以上古い・無いときは None（止まっている）"""
+def now_reading(name):
+    """ロガーが書く現在値。2分以上古い・無いときは None（止まっている）"""
     try:
-        with open(NOW_PATH, encoding="utf-8") as f:
+        with open(now_path(name), encoding="utf-8") as f:
             n = json.load(f)
         ts = datetime.fromisoformat(n["iso"])
     except (OSError, ValueError, KeyError):
@@ -71,3 +83,13 @@ def now_reading():
     if datetime.now(ts.tzinfo) - ts > timedelta(minutes=2):
         return None
     return n
+
+
+def all_points(day):
+    """サイト用: 全センサーの10分ごとの平均 {"thdrc": [...], "pt100": [...]}"""
+    return {name: every_10min(name, day) for name in SENSORS}
+
+
+def all_now():
+    """サイト用: 全センサーの現在値 {"thdrc": {...} または None, "pt100": ...}"""
+    return {name: now_reading(name) for name in SENSORS}

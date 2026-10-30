@@ -27,7 +27,9 @@ from datetime import datetime
 import spidev
 from gpiozero import LED, DigitalOutputDevice
 
-import thdrc_data
+import compare_data
+
+NAME = "thdrc"      # 記録の名前（templog/thdrc/・thdrc.json）
 
 # ============================================================
 # 設定値
@@ -107,8 +109,8 @@ def fmt1(v):
 
 def append_csv(now, t, h, mt, mh):
     # その日のCSVファイルに1行追記する（例: /home/iot-user/templog/thdrc/2026-10-29.csv）
-    os.makedirs(thdrc_data.LOG_DIR, exist_ok=True)
-    path = thdrc_data.csv_path(now)
+    os.makedirs(compare_data.log_dir(NAME), exist_ok=True)
+    path = compare_data.csv_path(NAME, now)
     new = not os.path.exists(path)
     with open(path, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -119,7 +121,7 @@ def append_csv(now, t, h, mt, mh):
 
 def write_now(now, t, h, mt, mh):
     """現在値を thdrc.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する"""
-    path = thdrc_data.NOW_PATH
+    path = compare_data.now_path(NAME)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump({"iso": now.astimezone().isoformat(timespec="seconds"),

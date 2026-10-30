@@ -39,7 +39,8 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
 | `thdrc_logger.py` | 比較用センサー THD-R-C（4〜20mA）の記録（RPi-GP40T で読む。使うときだけ） |
-| `thdrc_data.py` | THD-R-C の記録をサイト用に読む部品 |
+| `pt100_logger.py` | 比較用センサー Pt100（Y2Kb の USB モジュール）の記録（使うときだけ） |
+| `compare_data.py` | 比較用センサー（THD-R-C・Pt100）の記録をサイト用に読む部品 |
 | `pages/` | GitHub Pages 用のサイトと公開スクリプト |
 | `web/` | ラズパイ内で動くサイト（Flask） |
 | `systemd/` | 自動起動・定期実行の設定 |
@@ -191,6 +192,23 @@ sudo systemctl restart temp-web
 ```
 
 動いている間は GP40T を使っているので、ほかのプログラムで GP40T を読むときは `sudo systemctl stop thdrc-logger` で止める。
+
+### 9. 比較用センサー Pt100（使うときだけ）
+
+動かすと、比較の表に Pt100 の行と、温度のグラフに Pt100 の点線が出る（Pt100 に湿度はない）。
+
+- つなぎ方：Y2Kb の Pt100 温度測定モジュールを USB でラズパイにつなぐ（`/dev/ttyUSB0`）。モジュールは出荷時の設定（USB Tx mode = Auto、10秒ごと）のまま
+- K型熱電対のモジュールも同じ形のデータを送ってくるので、USB につなぐのは Pt100 のほうにする
+- 記録は `/home/iot-user/templog/pt100/日付.csv`、現在値は `/dev/shm/temp-monitor/pt100.json`
+
+```
+sudo cp ~/temp-monitor/systemd/pt100-logger.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now pt100-logger
+sudo systemctl restart temp-web
+```
+
+動いている間はモジュールの USB ポートを使っているので、`y2kb_read.py` で読むときは `sudo systemctl stop pt100-logger` で止める。
 
 ## 更新するとき
 
