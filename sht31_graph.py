@@ -51,9 +51,13 @@ def load(path):
     # CSVを読んで [(日時, 温度, 湿度), ...] のリストにする
     rows = []
     with open(path, encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            rows.append((datetime.strptime(r["日時"], "%Y-%m-%d %H:%M:%S"),
-                         float(r["温度(℃)"]), float(r["湿度(%)"])))
+        # 停電などで途中に入った「\0」の文字は消してから読む
+        for r in csv.DictReader(line.replace("\0", "") for line in f):
+            try:
+                rows.append((datetime.strptime(r["日時"], "%Y-%m-%d %H:%M:%S"),
+                             float(r["温度(℃)"]), float(r["湿度(%)"])))
+            except (KeyError, TypeError, ValueError):
+                continue    # 書き込み途中の行などは飛ばす
     return rows
 
 
