@@ -27,6 +27,7 @@ from datetime import datetime
 
 import serial
 
+import alarm_settings
 import compare_data
 
 # ============================================================
@@ -88,6 +89,7 @@ def main():
         sys.exit(f"{PORT} を開けません（USBケーブル・モジュールの電源を確認）: {e}")
     print(f"{PORT} を開きました", flush=True)
     last_logged = None      # 最後にCSVへ記録した区切りの時刻
+    s = alarm_settings.load()   # 補正の設定
     while True:
         line = port.readline()      # 1行届くまで待つ（30秒届かなければ空）
         if not line:
@@ -97,8 +99,11 @@ def main():
         if t is None:
             continue    # 電源を入れた直後の途中の行などは飛ばす
         now = datetime.now()
-        write_now(now, t)
         slot = int(time.time() // INTERVAL)
+        if slot != last_logged:
+            s = alarm_settings.load()   # 補正の設定（1分ごとに読み直す。設定画面で変えるとここで反映）
+        t, _ = alarm_settings.calibrate(NAME, t, None, s)
+        write_now(now, t)
         if slot != last_logged:     # 毎分1回：記録
             append_csv(now, t)
             last_logged = slot

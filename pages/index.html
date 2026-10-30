@@ -225,6 +225,15 @@
       </div>
       <div class="label" style="margin-top:8px">「注意」が1段目（軽い）、「警報」が2段目（深刻）です。高温と湿度は「注意 ≦ 警報」、低温は「警報 ≦ 注意」にしてください。注意の段階がいらないときは、注意と警報を同じ温度にしてください</div>
       <label class="check"><input type="checkbox" id="s_mail_on_warn">「注意」でもメールを送る（オフなら「警報」だけ送る）</label>
+      <h3 class="sub">センサーの補正</h3>
+      <div class="grid">
+        <label>SHT31 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_sht31_temp" required></label>
+        <label>SHT31 の湿度（%）<input type="number" step="0.1" min="-20" max="20" id="s_cal_sht31_hum" required></label>
+        <label>THD-R-C の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_thdrc_temp" required></label>
+        <label>THD-R-C の湿度（%）<input type="number" step="0.1" min="-20" max="20" id="s_cal_thdrc_hum" required></label>
+        <label>Pt100 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_pt100_temp" required></label>
+      </div>
+      <div class="label" style="margin-top:8px">測った値にこの数を足して、記録・表示します（例: 5 なら 5 上げる、-1.5 なら 1.5 下げる。0 なら補正なし）。SHT31 の補正は警報の判定にも使います。1分以内に反映され、それまでの記録は変わりません</div>
       <div class="row"><button type="submit">設定を保存</button></div>
       <p class="msg" id="settingsMsg"></p>
     </form>
@@ -552,7 +561,8 @@ const SETTINGS_URL = NOW_URL ? NOW_URL.replace(/\/api\/now$/, "/api/settings") :
 let adminPw = "";
 // 警報の設定の項目（画面の入力欄の id は "s_" + 名前）
 const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min",
-                      "hum_alarm", "hum_warn", "hum_hysteresis", "sensor_fail_min"];
+                      "hum_alarm", "hum_warn", "hum_hysteresis", "sensor_fail_min",
+                      "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp"];
 
 // メッセージを表示する（isError が true なら注意の色）
 function adminMsg(text, isError) {

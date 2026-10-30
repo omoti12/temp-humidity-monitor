@@ -305,6 +305,7 @@ def main():
             if bus is None:
                 bus = SMBus(1)
             t, h = read_sht31(bus)
+            t, h = alarm_settings.calibrate("sht31", t, h, s)    # 補正（設定画面で決めた数を足す）
         except Exception as e:
             # 読めなくても止まらず、次の測定（5秒後）で続ける。ログは1分に1回だけ書く
             if time.time() - last_fail_log >= 60:

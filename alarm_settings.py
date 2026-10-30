@@ -6,6 +6,7 @@
 #       ファイルがなければ DEFAULTS（初期値）を使う
 #   ・温度から状態（正常 / 高温注意 / 高温警報 / 低温注意 / 低温警報）を判定する
 #   ・湿度から状態（正常 / 高湿注意 / 高湿警報）を判定する（湿度は上限だけ）
+#   ・センサーの補正（測った値に足す数）をかける（calibrate()）
 #
 # 使っているところ
 #   sht31_logger.py（警報の判定とメール）、sht31_graph.py・web/app.py・pages/publish.py（グラフの線）
@@ -36,7 +37,17 @@ DEFAULTS = {
     # 警報・注意・センサー異常のメールを止めている期限（1970年からの秒数）。0 = 止めていない、-1 = 再開するまで止める
     "mail_pause_until": 0,
     "location_name": "",    # 設置場所の名前（サイトの一番上と、メールの件名に出す。空なら出さない）
+    # センサーの補正：測った値にこの数を足して記録・表示する（例: -0.5 なら 0.5 下げる）
+    # SHT31 の補正は警報の判定にも使われる。補正を変えても、それまでの記録は変わらない
+    "cal_sht31_temp": 0.0,  # SHT31 の温度（℃）
+    "cal_sht31_hum": 0.0,   # SHT31 の湿度（%）
+    "cal_thdrc_temp": 0.0,  # THD-R-C の温度（℃）
+    "cal_thdrc_hum": 0.0,   # THD-R-C の湿度（%）
+    "cal_pt100_temp": 0.0,  # Pt100 の温度（℃）
 }
+
+CAL_TEMP_MAX = 10.0     # 温度の補正の上限（±℃）
+CAL_HUM_MAX = 20.0      # 湿度の補正の上限（±%）
 
 # 湿度の状態の名前（数字が大きいほど高い）
 HUM_LEVELS = {0: "正常", 1: "高湿注意", 2: "高湿警報"}
@@ -68,7 +79,8 @@ def validate(new):
     s = load()
     try:
         for k in ("high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis",
-                  "hum_alarm", "hum_warn", "hum_hysteresis"):
+                  "hum_alarm", "hum_warn", "hum_hysteresis",
+                  "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp"):
             if k in new:
                 s[k] = round(float(new[k]), 1)
         for k in ("remind_min", "sensor_fail_min"):
@@ -121,6 +133,12 @@ def validate(new):
         raise ValueError("湿度の回復の幅は 0〜10% で入力してください")
     if not 1 <= s["sensor_fail_min"] <= 1440:
         raise ValueError("センサー異常を知らせるまでの時間は 1〜1440分 で入力してください")
+    for k in ("cal_sht31_temp", "cal_thdrc_temp", "cal_pt100_temp"):
+        if not -CAL_TEMP_MAX <= s[k] <= CAL_TEMP_MAX:
+            raise ValueError(f"温度の補正は -{CAL_TEMP_MAX:g}〜+{CAL_TEMP_MAX:g}℃ で入力してください")
+    for k in ("cal_sht31_hum", "cal_thdrc_hum"):
+        if not -CAL_HUM_MAX <= s[k] <= CAL_HUM_MAX:
+            raise ValueError(f"湿度の補正は -{CAL_HUM_MAX:g}〜+{CAL_HUM_MAX:g}% で入力してください")
     return s
 
 
@@ -207,3 +225,14 @@ def thresholds(s=None):
     if s["hum_enabled"]:
         th.update(hum_alarm=s["hum_alarm"], hum_warn=s["hum_warn"])
     return th
+
+
+def calibrate(name, t, h, s=None):
+    """センサー name（"sht31"・"thdrc"・"pt100"）の温度 t・湿度 h に補正を足して返す。
+    測れなかった値（None）はそのまま。湿度は 0〜100% に収める"""
+    s = s or load()
+    if t is not None:
+        t += s.get(f"cal_{name}_temp", 0.0)
+    if h is not None:
+        h = min(100.0, max(0.0, h + s.get(f"cal_{name}_hum", 0.0)))
+    return t, h

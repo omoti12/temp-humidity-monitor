@@ -27,6 +27,7 @@ from datetime import datetime
 import spidev
 from gpiozero import LED, DigitalOutputDevice
 
+import alarm_settings
 import compare_data
 
 NAME = "thdrc"      # 記録の名前（templog/thdrc/・thdrc.json）
@@ -139,11 +140,15 @@ def main():
     gp = GP40()             # 開けないときはエラーで止まり、systemd が10秒後に起動し直す
     last_logged = None      # 最後にCSVへ記録した区切りの時刻
     last_fail_log = 0.0     # 最後に「読み取り失敗」をログに書いた時刻（ログは1分に1回まで）
+    s = alarm_settings.load()   # 補正の設定（1分ごとに読み直す）
     while True:
         now = datetime.now()
         slot = int(time.time() // INTERVAL)
+        if slot != last_logged:
+            s = alarm_settings.load()   # 設定画面で変えた補正がここで反映される
         try:
             t, h, mt, mh = read_thdrc(gp)
+            t, h = alarm_settings.calibrate(NAME, t, h, s)     # 補正（電流[mA]は測ったままの値を記録する）
             write_now(now, t, h, mt, mh)
             if slot != last_logged:         # 毎分1回：記録
                 append_csv(now, t, h, mt, mh)
