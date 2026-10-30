@@ -5,10 +5,13 @@
 #   今日の記録（CSV）から、10分ごとの温度・湿度のグラフ画像（PNG）を作る。
 #   ラズパイにつないだモニターに表示するためのもの。
 #   （公開サイトのグラフは pages/index.html がブラウザ上で描いているので、これとは別）
+#   1時間に1回（と、その日の最後の 23:50）は、日付つきの画像を templog/graph/ にも保存する。
+#   これは Google ドライブへのバックアップ（templog-backup）で一緒に送られる
 #
 # 動かし方
 #   systemd のタイマー（sht31-graph.timer）が10分ごとに自動で実行する
 #   手動で作るとき : python3 sht31_graph.py
+#   前の日の画像を作るとき : python3 sht31_graph.py 2026-10-20（templog/graph/ にだけ保存する）
 #   モニターに表示 : feh --fullscreen --reload 60 /dev/shm/temp-monitor/graph.png
 # ============================================================
 import csv
@@ -26,6 +29,8 @@ import matplotlib.pyplot as plt
 LOG_DIR = "/home/iot-user/templog"     # 記録（CSV）があるフォルダ
 # グラフ画像はメモリ上（/dev/shm）に置く。10分ごとに作り直すのでSDカードに書く必要はない
 OUT_PATH = "/dev/shm/temp-monitor/graph.png"
+# バックアップ用の日付つきの画像（SDカード）。SDカードを傷めないよう、書くのは1時間に1回だけ
+SAVE_DIR = os.path.join(LOG_DIR, "graph")
 STEP_MIN = 10          # グラフの間隔（分）
 
 # グラフに引く警報・注意の線は、警報の設定（alarm_settings.py）から読む
@@ -66,7 +71,7 @@ def every_10min(rows):
     return times, temps, hums
 
 
-def draw(times, temps, hums, day):
+def draw(times, temps, hums, day, out_paths):
     # 上下2段のグラフを作る（上: 温度、下: 湿度。横軸の時刻は共通）
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
     fig.suptitle(f"温湿度 {day:%Y-%m-%d}（{STEP_MIN}分ごと）　更新 {datetime.now():%H:%M}",
@@ -104,26 +109,39 @@ def draw(times, temps, hums, day):
     ax2.set_xlim(day.replace(hour=0, minute=0), day.replace(hour=23, minute=59))
     ax2.xaxis.set_major_locator(mdates.HourLocator(interval=2))
 
-    # 画像として保存する
+    # 画像として保存する（out_paths の全部に）
     fig.tight_layout()
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    tmp = OUT_PATH + ".tmp.png"
-    fig.savefig(tmp, dpi=100)
-    os.replace(tmp, OUT_PATH)   # 表示中の画像が書きかけにならないよう、置き換えで更新する
+    for out in out_paths:
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        tmp = out + ".tmp.png"
+        fig.savefig(tmp, dpi=100)
+        os.replace(tmp, out)    # 表示中の画像が書きかけにならないよう、置き換えで更新する
     plt.close(fig)
 
 
 def main():
-    # 今日のCSVを読み、グラフを作る
-    day = datetime.now()
+    # 日付の指定があればその日、なければ今日のCSVを読み、グラフを作る
+    now = datetime.now()
+    try:
+        day = datetime.strptime(sys.argv[1], "%Y-%m-%d") if len(sys.argv) > 1 else now
+    except ValueError:
+        sys.exit("日付は 2026-10-20 の形で指定してください")
     path = os.path.join(LOG_DIR, day.strftime("%Y-%m-%d") + ".csv")
     if not os.path.exists(path):
         sys.exit(f"記録がまだありません: {path}")
     rows = load(path)
     if not rows:
         sys.exit("記録が空です")
-    draw(*every_10min(rows), day)
-    print(f"保存しました: {OUT_PATH}")
+    saved = os.path.join(SAVE_DIR, day.strftime("%Y-%m-%d") + ".png")
+    if len(sys.argv) > 1:
+        outs = [saved]              # 前の日の画像: バックアップ用だけ作る
+    else:
+        outs = [OUT_PATH]           # 今日の画像: モニター用は毎回
+        # バックアップ用は毎時の最初（00分台）と、その日の最後（23:50）だけ
+        if now.minute < STEP_MIN or (now.hour == 23 and now.minute >= 60 - STEP_MIN):
+            outs.append(saved)
+    draw(*every_10min(rows), day, outs)
+    print("保存しました: " + ", ".join(outs))
 
 
 # このファイルを直接実行したときの入口
