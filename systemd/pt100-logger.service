@@ -16,8 +16,8 @@ ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/pt100_logger.py
 Environment=LOG_DIR=/home/iot-user/templog
 Environment=SENSOR_NAME=pt100
 # モジュールをつなぐUSBの差し込み口（ttyUSB0・ttyUSB1 の番号は起動のたびに入れ替わることがあるので、差し込み口の場所で決める）
-# 差し込み口の名前は「ls -l /dev/serial/by-path/」で確かめられる。K型熱電対は hcd.0、Pt100 は hcd.1 の差し込み口に差す
-Environment=SENSOR_PORT=/dev/serial/by-path/platform-xhci-hcd.1-usb-0:1:1.0-port0
+# 差し込み口の名前は「ls -l /dev/serial/by-path/」で確かめられる。Pt100 は hcd.0、K型熱電対は hcd.1 の差し込み口に差す
+Environment=SENSOR_PORT=/dev/serial/by-path/platform-xhci-hcd.0-usb-0:1:1.0-port0
 WorkingDirectory=/home/iot-user
 # 止まったら必ず再起動する（10秒待ってから）
 Restart=always
