@@ -84,6 +84,8 @@
     background: var(--card); color: var(--text); text-decoration: none; cursor: pointer; }
   .import-msg { color: var(--muted); font-size: .85rem; margin: -4px 0 12px; }
   .import-msg.error { color: var(--warn); }
+  .import-go { font: inherit; font-size: .8rem; padding: 2px 10px; border-radius: 8px; border: 1px solid var(--line);
+               background: var(--card); color: var(--text); cursor: pointer; }
   /* ---- グラフ ---- */
   .chart-card { margin-bottom: 12px; }
   /* ---- グラフの表示範囲のボタン ---- */
@@ -652,7 +654,13 @@ function showImportMsg(head) {
   msg.hidden = false;
   msg.className = "import-msg";
   msg.textContent = `${head}：${imported.map((c) => `「${c.label}」`).join("")}`
-    + `（${fmt(times[0])}〜${fmt(times[times.length - 1])}）。前日・翌日で日を変えられます`;
+    + `（${fmt(times[0])}〜${fmt(times[times.length - 1])}）。前日・翌日で日を変えられます `;
+  // 押すと、取り込んだ記録の最初の日のグラフを出すボタン（今日の記録がないと線が見えないため）
+  const go = document.createElement("button");
+  go.textContent = "取り込んだ日を表示";
+  go.className = "import-go";
+  go.onclick = () => { day = fmt(times[0]); showHours(24); load(); };
+  msg.append(go);
   $("importClear").hidden = false;
 }
 
