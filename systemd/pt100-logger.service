@@ -14,8 +14,10 @@ Description=Pt100 (Y2Kb USB module) comparison logger
 [Service]
 ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/pt100_logger.py
 Environment=LOG_DIR=/home/iot-user/templog
-# モジュールのUSBポート（K型熱電対のモジュールと差し替えたときは番号が変わることがある）
-Environment=PT100_PORT=/dev/ttyUSB0
+Environment=SENSOR_NAME=pt100
+# モジュールのUSBポート（ttyUSB0・ttyUSB1 の番号は、起動のたびに入れ替わることがある）
+# 2つつなぐときは「ls -l /dev/serial/by-path/」で差した場所の名前を確かめ、その名前に書き換えると入れ替わらない
+Environment=SENSOR_PORT=/dev/ttyUSB0
 WorkingDirectory=/home/iot-user
 # 止まったら必ず再起動する（10秒待ってから）
 Restart=always

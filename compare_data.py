@@ -1,11 +1,11 @@
-"""比較用センサー（THD-R-C・Pt100）の記録を読む部品。
+"""比較用センサー（THD-R-C・Pt100・K型熱電対）の記録を読む部品。
 web/app.py と pages/publish.py の両方から使う。"""
 # ============================================================
 # このファイルの役割
 #   比較用センサーのロガーが書いた記録を、サイト用に読み出す
 #     ・現在値   : /dev/shm/temp-monitor/名前.json（数秒ごとに上書き）
 #     ・1分ごと  : /home/iot-user/templog/名前/日付.csv
-#   名前は "thdrc"（thdrc_logger.py）または "pt100"（pt100_logger.py）
+#   名前は "thdrc"（thdrc_logger.py）、"pt100"・"ktc"（どちらも pt100_logger.py。ktc は K型熱電対）
 #   SHT31 の記録（templog/日付.csv）とは別のフォルダに置くので、今までの記録には影響しない
 # ============================================================
 import csv
@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 LOG_BASE = os.environ.get("LOG_DIR", "/home/iot-user/templog")
 NOW_DIR = os.environ.get("COMPARE_NOW_DIR", "/dev/shm/temp-monitor")
 STEP_MIN = 10          # グラフの間隔（分）。SHT31 のグラフと同じ
-SENSORS = ("thdrc", "pt100")    # サイトに出す比較用センサーの名前
+SENSORS = ("thdrc", "pt100", "ktc")    # サイトに出す比較用センサーの名前
 
 
 def log_dir(name):
@@ -86,7 +86,7 @@ def now_reading(name):
 
 
 def all_points(day):
-    """サイト用: 全センサーの10分ごとの平均 {"thdrc": [...], "pt100": [...]}"""
+    """サイト用: 全センサーの10分ごとの平均 {"thdrc": [...], "pt100": [...], "ktc": [...]}"""
     return {name: every_10min(name, day) for name in SENSORS}
 
 

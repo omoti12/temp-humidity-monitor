@@ -44,6 +44,7 @@ DEFAULTS = {
     "cal_thdrc_temp": 0.0,  # THD-R-C の温度（℃）
     "cal_thdrc_hum": 0.0,   # THD-R-C の湿度（%）
     "cal_pt100_temp": 0.0,  # Pt100 の温度（℃）
+    "cal_ktc_temp": 0.0,    # K型熱電対の温度（℃）
 }
 
 CAL_TEMP_MAX = 10.0     # 温度の補正の上限（±℃）
@@ -80,7 +81,8 @@ def validate(new):
     try:
         for k in ("high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis",
                   "hum_alarm", "hum_warn", "hum_hysteresis",
-                  "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp"):
+                  "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp",
+                  "cal_ktc_temp"):
             if k in new:
                 s[k] = round(float(new[k]), 1)
         for k in ("remind_min", "sensor_fail_min"):
@@ -133,7 +135,7 @@ def validate(new):
         raise ValueError("湿度の回復の幅は 0〜10% で入力してください")
     if not 1 <= s["sensor_fail_min"] <= 1440:
         raise ValueError("センサー異常を知らせるまでの時間は 1〜1440分 で入力してください")
-    for k in ("cal_sht31_temp", "cal_thdrc_temp", "cal_pt100_temp"):
+    for k in ("cal_sht31_temp", "cal_thdrc_temp", "cal_pt100_temp", "cal_ktc_temp"):
         if not -CAL_TEMP_MAX <= s[k] <= CAL_TEMP_MAX:
             raise ValueError(f"温度の補正は -{CAL_TEMP_MAX:g}〜+{CAL_TEMP_MAX:g}℃ で入力してください")
     for k in ("cal_sht31_hum", "cal_thdrc_hum"):
@@ -228,7 +230,7 @@ def thresholds(s=None):
 
 
 def calibrate(name, t, h, s=None):
-    """センサー name（"sht31"・"thdrc"・"pt100"）の温度 t・湿度 h に補正を足して返す。
+    """センサー name（"sht31"・"thdrc"・"pt100"・"ktc"）の温度 t・湿度 h に補正を足して返す。
     測れなかった値（None）はそのまま。湿度は 0〜100% に収める"""
     s = s or load()
     if t is not None:

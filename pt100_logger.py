@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Pt100 比較用ロガー: Y2Kb の Pt100 温度測定モジュールから USB で温度を受け取り、
-SHT31 と比べられるように記録する。"""
+"""Pt100・K型熱電対 比較用ロガー: Y2Kb の温度測定モジュール（Pt100 / K型熱電対）から
+USB で温度を受け取り、SHT31 と比べられるように記録する。"""
 # ============================================================
 # このプログラムの役割（比較の実験用。警報メールは送らない）
 #   1. モジュールが10秒ごとに送ってくる温度を受け取る
 #        送ってくる形: ＜現在温度＞,＜平均温度＞,＜最大温度＞,＜最小温度＞（1行ずつ）
-#   2. 受け取った現在温度を pt100.json に書く（サイトの「比較」用）
-#   3. 1分に1回、templog/pt100/日付.csv に記録する（グラフ用）
+#   2. 受け取った現在温度を 名前.json に書く（サイトの「比較」用）
+#   3. 1分に1回、templog/名前/日付.csv に記録する（グラフ用）
 #
-# つなぎ方: Pt100 モジュールを USB でラズパイにつなぐ（/dev/ttyUSB0 として見える）
-#   K型熱電対モジュールも同じ形のデータを送ってくるので、つなぐのは Pt100 のほうにする
-#   ポートを変えるとき : 環境変数 PT100_PORT=/dev/ttyUSB1 など
+# Pt100 と K型熱電対のモジュールは同じ形のデータを送ってくるので、このプログラムを2つ動かして両方記録する
+#   Pt100       : pt100-logger.service（SENSOR_NAME=pt100）
+#   K型熱電対   : ktc-logger.service（SENSOR_NAME=ktc）
+#   どちらのモジュールかは、つないだUSBポートの場所で見分ける（環境変数 SENSOR_PORT で指定）
 #
 # 動かし方
 #   普段は systemd（pt100-logger.service）が自動で起動・再起動する
@@ -34,12 +35,14 @@ import compare_data
 # 設定値
 # ============================================================
 
-NAME = "pt100"      # 記録の名前（templog/pt100/・pt100.json）
-PORT = os.environ.get("PT100_PORT", "/dev/ttyUSB0")
+# 記録の名前（templog/名前/・名前.json）。"pt100" か "ktc"（K型熱電対）
+NAME = os.environ.get("SENSOR_NAME", "pt100")
+# モジュールのUSBポート（PT100_PORT は前の版の名前。残っていても使えるようにしておく）
+PORT = os.environ.get("SENSOR_PORT") or os.environ.get("PT100_PORT", "/dev/ttyUSB0")
 BAUD = 921600       # モジュールの通信速度（出荷時の設定）
 INTERVAL = 60       # 記録（CSV）の間隔（秒）
-# 正しい値とみなす範囲[℃]。外れたら断線などの疑いとして記録しない
-TEMP_MIN, TEMP_MAX = -50.0, 200.0
+# 正しい値とみなす範囲[℃]。外れたら断線などの疑いとして記録しない（K型熱電対は測れる範囲が広い）
+TEMP_MIN, TEMP_MAX = (-200.0, 1300.0) if NAME == "ktc" else (-50.0, 200.0)
 
 
 # ============================================================
@@ -59,7 +62,7 @@ def append_csv(now, t):
 
 
 def write_now(now, t):
-    """現在値を pt100.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する"""
+    """現在値を 名前.json（pt100.json など）に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する"""
     path = compare_data.now_path(NAME)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:

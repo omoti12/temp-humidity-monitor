@@ -19,6 +19,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
   - GitHub Pages：どこからでも見られる。グラフは10分ごと、現在値は5秒ごと（ラズパイから直接読む）
   - ラズパイ内のサイト（`http://ラズパイのIP:8000`）：同じネットワーク内から。1分ごとに更新
 - グラフは拡大できる（表示範囲のボタン、PCはドラッグ、スマホは2本指）。拡大中は「◀ 前へ」「次へ ▶」ボタンで左右に動かせる
+- ほかの記録計（GRAPHTEC GR-3500 など）のCSVを公開サイトの「CSVを取り込む」で読み込み、グラフに重ねて比べられる（ファイルはブラウザの中だけで読み、どこにも送らない。ページを開き直すと消える）
 - 10分ごとにグラフ画像（PNG）を作成。ラズパイにつないだモニターで表示できる
 - 1時間ごとに記録と1日ごとのグラフ画像をGoogleドライブへバックアップ
 
@@ -39,8 +40,8 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `alert_mail.py` | 警報メールの設定・宛先・送信 |
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
 | `thdrc_logger.py` | 比較用センサー THD-R-C（4〜20mA）の記録（RPi-GP40T で読む。使うときだけ） |
-| `pt100_logger.py` | 比較用センサー Pt100（Y2Kb の USB モジュール）の記録（使うときだけ） |
-| `compare_data.py` | 比較用センサー（THD-R-C・Pt100）の記録をサイト用に読む部品 |
+| `pt100_logger.py` | 比較用センサー Pt100・K型熱電対（Y2Kb の USB モジュール）の記録（使うときだけ） |
+| `compare_data.py` | 比較用センサー（THD-R-C・Pt100・K型熱電対）の記録をサイト用に読む部品 |
 | `pages/` | GitHub Pages 用のサイトと公開スクリプト |
 | `web/` | ラズパイ内で動くサイト（Flask） |
 | `systemd/` | 自動起動・定期実行の設定 |
@@ -201,7 +202,6 @@ sudo systemctl restart temp-web
 動かすと、比較の表に Pt100 の行と、温度のグラフに Pt100 の点線が出る（Pt100 に湿度はない）。
 
 - つなぎ方：Y2Kb の Pt100 温度測定モジュールを USB でラズパイにつなぐ（`/dev/ttyUSB0`）。モジュールは出荷時の設定（USB Tx mode = Auto、10秒ごと）のまま
-- K型熱電対のモジュールも同じ形のデータを送ってくるので、USB につなぐのは Pt100 のほうにする
 - 記録は `/home/iot-user/templog/pt100/日付.csv`、現在値は `/dev/shm/temp-monitor/pt100.json`
 
 ```
@@ -212,6 +212,23 @@ sudo systemctl restart temp-web
 ```
 
 動いている間はモジュールの USB ポートを使っているので、`y2kb_read.py` で読むときは `sudo systemctl stop pt100-logger` で止める。
+
+### 10. 比較用センサー K型熱電対（使うときだけ）
+
+Y2Kb の K型熱電対モジュールは Pt100 と同じ形のデータを送ってくるので、同じプログラム（`pt100_logger.py`）を名前 `ktc` で動かす。
+動かすと、比較の表に K型熱電対の行と、温度のグラフに K型熱電対の点線が出る。
+
+- つなぎ方：K型熱電対のモジュールも USB でラズパイにつなぐ（Pt100 と2つ同時につないでよい）
+- どちらのモジュールがどのポートかは、`systemd/pt100-logger.service` と `systemd/ktc-logger.service` の `SENSOR_PORT` で決める。
+  `ttyUSB0`・`ttyUSB1` の番号は起動のたびに入れ替わることがあるので、2つつなぐときは `ls -l /dev/serial/by-path/` で差した場所の名前を確かめて書き換える
+- 記録は `/home/iot-user/templog/ktc/日付.csv`、現在値は `/dev/shm/temp-monitor/ktc.json`
+
+```
+sudo cp ~/temp-monitor/systemd/pt100-logger.service ~/temp-monitor/systemd/ktc-logger.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ktc-logger
+sudo systemctl restart pt100-logger temp-web
+```
 
 ## 更新するとき
 
@@ -328,7 +345,7 @@ sudo systemctl enable --now netcheck
 | 湿度の回復の幅 | 2% | 同上 |
 | センサー異常を知らせるまで | 5分 | 同上 |
 | 設置場所の名前 | （なし） | 同上 |
-| センサーの補正（SHT31・THD-R-C・Pt100 の温度・湿度に足す数） | 0（補正なし） | 同上（SHT31 の補正は警報の判定にも使う） |
+| センサーの補正（SHT31・THD-R-C・Pt100・K型熱電対 の温度・湿度に足す数） | 0（補正なし） | 同上（SHT31 の補正は警報の判定にも使う） |
 | グラフの間隔 | 10分 | `STEP_MIN` |
 
 ## ライセンス

@@ -28,14 +28,14 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
-    --hot-warn: #b08800; --cold-warn: #9775fa; --cmp: #0b7285; --pt: #c2255c;
+    --hot-warn: #b08800; --cold-warn: #9775fa; --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e;
   }
   /* スマホやPCがダークモードのときの色 */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
-      --hot-warn: #fcc419; --cold-warn: #d0bfff; --cmp: #66d9e8; --pt: #faa2c1;
+      --hot-warn: #fcc419; --cold-warn: #d0bfff; --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a;
     }
   }
   /* ---- 全体のレイアウト ---- */
@@ -73,6 +73,7 @@
   .compare td { font-size: 1.15rem; font-weight: 600; }
   .compare .cmp { color: var(--cmp); }
   .compare .pt { color: var(--pt); }
+  .compare .ktc { color: var(--ktc); }
   .compare .d { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; }
   .compare .note { color: var(--muted); font-size: .8rem; margin-top: 6px; }
   /* ---- 日付を選ぶボタンの並び ---- */
@@ -80,6 +81,8 @@
   .controls button, .controls input, .controls a {
     font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--card); color: var(--text); text-decoration: none; cursor: pointer; }
+  .import-msg { color: var(--muted); font-size: .85rem; margin: -4px 0 12px; }
+  .import-msg.error { color: var(--warn); }
   /* ---- グラフ ---- */
   .chart-card { margin-bottom: 12px; }
   /* ---- グラフの表示範囲のボタン ---- */
@@ -136,7 +139,7 @@
       <div class="stale" id="stale" hidden>30分以上データが更新されていません</div></div>
   </section>
 
-  <!-- SHT31 と比較用センサー（THD-R-C・Pt100）の今の値の比べ（比較用センサーを動かしているときだけ出す。中身は showCompare() が書く） -->
+  <!-- SHT31 と比較用センサー（THD-R-C・Pt100・K型熱電対）の今の値の比べ（比較用センサーを動かしているときだけ出す。中身は showCompare() が書く） -->
   <section class="card compare" id="compare" hidden>
     <div class="label">センサーの比較（今の値）</div>
     <table>
@@ -144,6 +147,7 @@
       <tr><td>SHT31</td><td id="cmp-sht-t">--</td><td id="cmp-sht-h">--</td></tr>
       <tr id="cmp-thdrc" hidden><td class="cmp">THD-R-C</td><td id="cmp-thdrc-t">--</td><td id="cmp-thdrc-h">--</td></tr>
       <tr id="cmp-pt100" hidden><td class="pt">Pt100</td><td id="cmp-pt100-t">--</td><td id="cmp-pt100-h">--</td></tr>
+      <tr id="cmp-ktc" hidden><td class="ktc">K型熱電対</td><td id="cmp-ktc-t">--</td><td id="cmp-ktc-h">--</td></tr>
     </table>
     <div class="note">小さい数字は SHT31 との差。THD-R-C の誤差は 温度 ±1.0℃・湿度 ±3%（説明書の値）</div>
   </section>
@@ -155,7 +159,12 @@
     <button id="next">翌日 ▶</button>
     <button id="today">今日</button>
     <a id="dl" href="#">CSVダウンロード</a>
+    <!-- ほかの記録計のCSVを取り込んでグラフに重ねる（ファイルはこのブラウザの中だけで読む） -->
+    <button id="importBtn">CSVを取り込む</button>
+    <input type="file" id="importFile" accept=".csv,text/csv" multiple hidden>
+    <button id="importClear" hidden>取り込んだ線を消す</button>
   </div>
+  <div class="import-msg" id="importMsg" hidden></div>
 
   <!-- グラフの表示範囲（拡大）のボタン。温度と湿度のグラフは一緒に動く -->
   <div class="zoombar">
@@ -232,6 +241,7 @@
         <label>THD-R-C の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_thdrc_temp" required></label>
         <label>THD-R-C の湿度（%）<input type="number" step="0.1" min="-20" max="20" id="s_cal_thdrc_hum" required></label>
         <label>Pt100 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_pt100_temp" required></label>
+        <label>K型熱電対 の温度（℃）<input type="number" step="0.1" min="-10" max="10" id="s_cal_ktc_temp" required></label>
       </div>
       <div class="label" style="margin-top:8px">測った値にこの数を足して、記録・表示します（例: 5 なら 5 上げる、-1.5 なら 1.5 下げる。0 なら補正なし）。SHT31 の補正は警報の判定にも使います。1分以内に反映され、それまでの記録は変わりません</div>
       <div class="row"><button type="submit">設定を保存</button></div>
@@ -337,6 +347,9 @@ function buildCharts() {
       // [8] 比較用センサー Pt100（記録がある日だけ出す）
       { label: "Pt100", data: [], borderColor: css("--pt"), backgroundColor: css("--pt"), borderDash: [4, 3],
         pointRadius: 1.5, borderWidth: 2, hidden: true },
+      // [9] 比較用センサー K型熱電対（記録がある日だけ出す）
+      { label: "K型熱電対", data: [], borderColor: css("--ktc"), backgroundColor: css("--ktc"), borderDash: [4, 3],
+        pointRadius: 1.5, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("℃"),
   });
@@ -381,10 +394,10 @@ function showLatest(l, isLive) {
     + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
 }
 
-// SHT31（s）と比較用センサー（c.thdrc・c.pt100）の今の値を並べて出す
+// SHT31（s）と比較用センサー（c.thdrc・c.pt100・c.ktc）の今の値を並べて出す
 // 比較用センサーが1つも動いていなければ表ごと隠し、動いていないセンサーの行も隠す
 function showCompare(s, c) {
-  const names = ["thdrc", "pt100"];
+  const names = ["thdrc", "pt100", "ktc"];
   const any = !!(s && c && names.some((k) => c[k]));
   $("compare").hidden = !any;
   if (!any) return;
@@ -402,21 +415,23 @@ function showCompare(s, c) {
   });
 }
 
-// グラフに比較用センサーの線を入れる（cmp.thdrc・cmp.pt100 は10分ごとの平均。記録がない日は線も凡例も出さない）
-// 記録がある日は、SHT31 の線の名前を「SHT31」にして見分けやすくする。Pt100 は温度だけ
+// グラフに比較用センサーの線を入れる（cmp.thdrc・cmp.pt100・cmp.ktc は10分ごとの平均。記録がない日は線も凡例も出さない）
+// 記録がある日は、SHT31 の線の名前を「SHT31」にして見分けやすくする。Pt100・K型熱電対は温度だけ
 function showCompareLines(cmp) {
   const line = (points) => {
     const byTime = Object.fromEntries((points || []).map((p) => [p.time, p]));
     return { has: Object.keys(byTime).length > 0, pick: (k) => slots.map((s) => (byTime[s] ? byTime[s][k] : null)) };
   };
-  const thd = line(cmp.thdrc), pt = line(cmp.pt100);
+  const thd = line(cmp.thdrc), pt = line(cmp.pt100), ktc = line(cmp.ktc);
   const t = tempChart.data.datasets, h = humChart.data.datasets;
   t[7].data = thd.pick("temp");
   h[3].data = thd.pick("hum");
   t[7].hidden = h[3].hidden = !thd.has;
   t[8].data = pt.pick("temp");
   t[8].hidden = !pt.has;
-  t[2].label = thd.has || pt.has ? "SHT31" : "温度";
+  t[9].data = ktc.pick("temp");
+  t[9].hidden = !ktc.has;
+  t[2].label = thd.has || pt.has || ktc.has ? "SHT31" : "温度";
   h[0].label = thd.has ? "SHT31" : "湿度";
 }
 
@@ -462,8 +477,9 @@ async function load() {
   }
   if (!info) return;
   const d = { ...info, points: dayData ? dayData.points : [] };
-  // 比較用センサー（THD-R-C・Pt100）の10分ごとの平均
-  const CMP_POINTS = { thdrc: dayData && dayData.thdrc_points, pt100: dayData && dayData.pt100_points };
+  // 比較用センサー（THD-R-C・Pt100・K型熱電対）の10分ごとの平均
+  const CMP_POINTS = { thdrc: dayData && dayData.thdrc_points, pt100: dayData && dayData.pt100_points,
+                       ktc: dayData && dayData.ktc_points };
 
   // ラズパイから直接読めていないときだけ、こちらの値を現在値として表示する
   if (d.latest && !live) showLatest(d.latest, false);
@@ -487,15 +503,150 @@ async function load() {
   // 湿度の警報を使わない設定のときは、凡例にも出さない
   humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
   showCompareLines(CMP_POINTS);
+  showImported();
   tempChart.update();
   humChart.update();
 
-  // 記録がない日は「この日の記録はありません」を出し、CSVのリンクを隠す
-  $("empty").hidden = d.points.length > 0;
+  // 記録がない日は「この日の記録はありません」を出し、CSVのリンクを隠す（取り込んだ記録があれば出さない）
+  $("empty").hidden = d.points.length > 0 || importedOnDay(day);
   $("day").value = day;
   $("dl").href = `data/${day}.csv`;
   $("dl").hidden = !dayData;
 }
+
+// ============================================================
+// ほかの記録計のCSVを取り込んで、グラフに重ねる
+//   ファイルはこのブラウザの中だけで読む（ラズパイやインターネットには送らない）
+//   ページを開き直すと消える。温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
+//   読める形
+//     ・GRAPHTEC の記録計（GR-3500 など）のCSV（「波形名」「単位」の行から列の名前と単位を読む）
+//     ・1列目が日時、2列目からが数値のCSV（1行目が見出し。このサイトのCSVダウンロードの形も読める）
+// ============================================================
+let imported = [];      // 取り込んだ列 [{ label: 名前, unit: "℃" か "%", rows: [[日時, 値], ...] }, ...]
+// 取り込んだ線の色（ほかの線と見分けやすい色）
+const IMPORT_COLORS = ["#f08c00", "#7048e8", "#868e96", "#5c940d", "#e64980"];
+
+// ファイルを文字にする。UTF-8 で読めなければ Shift_JIS（記録計のCSVはたいていこちら）として読む
+async function readText(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch (e) {
+    return new TextDecoder("shift_jis").decode(buf);
+  }
+}
+
+// 列の名前と単位から、温度（℃）か湿度（%）かを決める。わからなければ温度とみなす
+function guessUnit(name, unit) {
+  const t = `${name} ${unit}`;
+  if (/RH|%|％|湿|シツ/i.test(t)) return "%";
+  return "℃";
+}
+
+// CSVの文字から取り込む列を取り出す。fileName は列の名前がないときに使う
+function parseCsv(text, fileName) {
+  // 全角・半角カナなどをそろえる（例: ｵﾝﾄﾞ → オンド、ﾟC → °C）
+  const lines = text.normalize("NFKC").split(/\r?\n/);
+  // 1行を区切る（"" で囲まれた値の "" は外す）
+  const cells = (line) => line.split(",").map((c) => c.trim().replace(/^"(.*)"$/, "$1").trim());
+  // 「2026/10/30  15:26:55.96」「2026-10-30 15:26:55」などの日時を読む
+  const DATE = /^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/;
+  let names = [], units = [], header = null;
+  const cols = [];      // 列ごとの [[日時, 値], ...]
+  for (const line of lines) {
+    const c = cells(line);
+    if (!c[0]) continue;
+    if (c[0] === "波形名") { names = c.slice(1); continue; }
+    if (c[0] === "単位") { units = c.slice(1); continue; }
+    const m = c[0].match(DATE);
+    if (!m) {
+      if (!cols.length) header = c;     // 記録が始まる前の最後の行を見出しとして覚えておく
+      continue;
+    }
+    const ts = new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+    c.slice(1).forEach((v, i) => {
+      const x = parseFloat(v);
+      if (!cols[i]) cols[i] = [];
+      if (Number.isFinite(x)) cols[i].push([ts, x]);
+    });
+  }
+  // 見出しの名前（「波形名」の行がなければ、記録の前の行）
+  if (!names.length && header) names = header.slice(1);
+  const base = fileName.replace(/\.csv$/i, "");
+  return cols.map((rows, i) => {
+    let name = (names[i] || "").replace(/\s+/g, "") || `${base} 列${i + 2}`;
+    return { label: name, unit: guessUnit(name, units[i] || ""), rows };
+  }).filter((col) => col.rows.length > 0);   // 数値のない列（「状態」など）は取り込まない
+}
+
+// 表示している日 d に、取り込んだ記録があるか
+function importedOnDay(d) {
+  return imported.some((col) => col.rows.some(([ts]) => fmt(ts) === d));
+}
+
+// 取り込んだ列を、表示している日の10分ごとの平均にしてグラフに入れる（前に入れた線は入れ直す）
+function showImported() {
+  for (const c of [tempChart, humChart]) c.data.datasets = c.data.datasets.filter((ds) => !ds.imported);
+  imported.forEach((col, i) => {
+    const buckets = {};     // 10分の枠の番号 → その枠の値
+    for (const [ts, v] of col.rows) {
+      if (fmt(ts) !== day) continue;
+      const k = Math.floor((ts.getHours() * 60 + ts.getMinutes()) / 10);
+      (buckets[k] = buckets[k] || []).push(v);
+    }
+    const data = slots.map((_, k) => buckets[k]
+      ? Math.round(buckets[k].reduce((a, b) => a + b, 0) / buckets[k].length * 10) / 10 : null);
+    const color = IMPORT_COLORS[i % IMPORT_COLORS.length];
+    (col.unit === "%" ? humChart : tempChart).data.datasets.push({
+      label: col.label, data, borderColor: color, backgroundColor: color, borderDash: [1, 2],
+      pointRadius: 1.5, borderWidth: 2, imported: true });
+  });
+  // 取り込んだ線があるときは、ラズパイの線の名前を「SHT31」にして見分けやすくする
+  if (imported.length) tempChart.data.datasets[2].label = humChart.data.datasets[0].label = "SHT31";
+}
+
+// ボタン: ファイルを選ぶ → 読んで取り込む
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async (e) => {
+  const msg = $("importMsg");
+  const added = [];
+  for (const file of e.target.files) {
+    try {
+      added.push(...parseCsv(await readText(file), file.name));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  e.target.value = "";      // 同じファイルをもう一度選べるようにする
+  msg.hidden = false;
+  if (!added.length) {
+    msg.className = "import-msg error";
+    msg.textContent = "取り込める記録が見つかりませんでした（1列目が日時のCSVか確認してください）";
+    return;
+  }
+  // 同じ名前の線があれば、名前の後ろに番号を付けて見分ける
+  for (const col of added) {
+    let label = col.label, n = 2;
+    while (imported.some((x) => x.label === label)) label = `${col.label}(${n++})`;
+    imported.push({ ...col, label });
+  }
+  const times = added.flatMap((col) => [col.rows[0][0], col.rows[col.rows.length - 1][0]]).sort((a, b) => a - b);
+  const first = fmt(times[0]), last = fmt(times[times.length - 1]);
+  msg.className = "import-msg";
+  msg.textContent = `${added.map((c) => `「${c.label}」`).join("")}を取り込みました`
+    + `（${first}〜${last}）。前日・翌日で日を変えられます。ページを開き直すと消えます`;
+  $("importClear").hidden = false;
+  // 表示している日に記録がなければ、取り込んだ記録の最初の日を表示する
+  if (!importedOnDay(day)) { day = first; showHours(24); }
+  load();
+};
+// ボタン: 取り込んだ線をすべて消す
+$("importClear").onclick = () => {
+  imported = [];
+  $("importClear").hidden = true;
+  $("importMsg").hidden = true;
+  load();
+};
 
 // ============================================================
 // グラフの拡大
@@ -562,7 +713,8 @@ let adminPw = "";
 // 警報の設定の項目（画面の入力欄の id は "s_" + 名前）
 const SETTING_KEYS = ["high_alarm", "high_warn", "low_warn", "low_alarm", "hysteresis", "remind_min",
                       "hum_alarm", "hum_warn", "hum_hysteresis", "sensor_fail_min",
-                      "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp"];
+                      "cal_sht31_temp", "cal_sht31_hum", "cal_thdrc_temp", "cal_thdrc_hum", "cal_pt100_temp",
+                      "cal_ktc_temp"];
 
 // メッセージを表示する（isError が true なら注意の色）
 function adminMsg(text, isError) {
