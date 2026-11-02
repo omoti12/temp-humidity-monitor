@@ -521,7 +521,9 @@ async function load() {
 // ============================================================
 // ほかの記録計のCSVを取り込んで、グラフに重ねる
 //   ファイルはこのブラウザの中だけで読む（ラズパイやインターネットには送らない）
-//   ページを開き直すと消える。温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
+//   取り込んだ記録はこのブラウザに保存し、次に開いたときも出す（新しく取り込むと入れ替わる）
+//   温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
+//   線の名前は「機器名 温度」（CSVに「機器名」の行があるとき。例: GR-3500 温度）、なければ「CSV取り込み 温度」
 //   読める形
 //     ・GRAPHTEC の記録計（GR-3500 など）のCSV（「波形名」「単位」の行から列の名前と単位を読む）
 //     ・1列目が日時、2列目からが数値のCSV（1行目が見出し。このサイトのCSVダウンロードの形も読める）
@@ -555,11 +557,12 @@ function parseCsv(text, fileName) {
   const cells = (line) => line.split(",").map((c) => c.trim().replace(/^"(.*)"$/, "$1").trim());
   // 「2026/10/30  15:26:55.96」「2026-10-30 15:26:55」などの日時を読む
   const DATE = /^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/;
-  let names = [], units = [], header = null;
+  let names = [], units = [], header = null, device = "";
   const cols = [];      // 列ごとの [[日時, 値], ...]
   for (const line of lines) {
     const c = cells(line);
     if (!c[0]) continue;
+    if (c[0] === "機器名") { device = c[1] || ""; continue; }
     if (c[0] === "波形名") { names = c.slice(1); continue; }
     if (c[0] === "単位") { units = c.slice(1); continue; }
     const m = c[0].match(DATE);
@@ -580,8 +583,8 @@ function parseCsv(text, fileName) {
   return cols.map((rows, i) => {
     const name = (names[i] || "").replace(/\s+/g, "") || `${base} 列${i + 2}`;
     const unit = guessUnit(name, units[i] || "");
-    // 線の名前は「CSV取り込み 温度」「CSV取り込み 湿度」にして、取り込んだ線だとわかるようにする
-    return { label: `CSV取り込み ${unit === "%" ? "湿度" : "温度"}`, unit, rows };
+    // 線の名前は「機器名 温度」「機器名 湿度」（機器名がなければ「CSV取り込み」）にして、取り込んだ線だとわかるようにする
+    return { label: `${device || "CSV取り込み"} ${unit === "%" ? "湿度" : "温度"}`, unit, rows };
   }).filter((col) => col.rows.length > 0);   // 数値のない列（「状態」など）は取り込まない
 }
 
@@ -611,10 +614,49 @@ function showImported() {
   if (imported.length) tempChart.data.datasets[2].label = humChart.data.datasets[0].label = "SHT31";
 }
 
-// ボタン: ファイルを選ぶ → 読んで取り込む
+// 取り込んだ記録を、このブラウザに保存しておく場所の名前
+const IMPORT_KEY = "temp-monitor-import";
+
+// 取り込んだ記録をこのブラウザに保存する（保存できないブラウザでは、開いている間だけ表示する）
+function saveImported() {
+  try {
+    if (imported.length) {
+      localStorage.setItem(IMPORT_KEY, JSON.stringify(
+        imported.map((col) => ({ ...col, rows: col.rows.map(([ts, v]) => [ts.getTime(), v]) }))));
+    } else {
+      localStorage.removeItem(IMPORT_KEY);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ページを開いたとき: 前に取り込んだ記録があれば読み出す
+function restoreImported() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(IMPORT_KEY) || "[]");
+    imported = saved.map((col) => ({ ...col, rows: col.rows.map(([t, v]) => [new Date(t), v]) }));
+  } catch (e) {
+    imported = [];
+  }
+  if (imported.length) showImportMsg("取り込んだ記録を表示しています");
+}
+
+// 取り込んだ記録の名前と期間を、ボタンの下に出す
+function showImportMsg(head) {
+  const times = imported.flatMap((col) => [col.rows[0][0], col.rows[col.rows.length - 1][0]]).sort((a, b) => a - b);
+  const msg = $("importMsg");
+  msg.hidden = false;
+  msg.className = "import-msg";
+  msg.textContent = `${head}：${imported.map((c) => `「${c.label}」`).join("")}`
+    + `（${fmt(times[0])}〜${fmt(times[times.length - 1])}）。前日・翌日で日を変えられます。`
+    + "新しく取り込むと入れ替わります";
+  $("importClear").hidden = false;
+}
+
+// ボタン: ファイルを選ぶ → 読んで取り込む（前に取り込んだ記録とは入れ替える）
 $("importBtn").onclick = () => $("importFile").click();
 $("importFile").onchange = async (e) => {
-  const msg = $("importMsg");
   const added = [];
   for (const file of e.target.files) {
     try {
@@ -624,31 +666,33 @@ $("importFile").onchange = async (e) => {
     }
   }
   e.target.value = "";      // 同じファイルをもう一度選べるようにする
-  msg.hidden = false;
   if (!added.length) {
+    const msg = $("importMsg");
+    msg.hidden = false;
     msg.className = "import-msg error";
     msg.textContent = "取り込める記録が見つかりませんでした（1列目が日時のCSVか確認してください）";
     return;
   }
-  // 同じ名前の線があれば、名前の後ろに番号を付けて見分ける
+  // 一度に複数のファイルを選んで同じ名前の線ができたら、名前の後ろに番号を付けて見分ける
+  imported = [];
   for (const col of added) {
     let label = col.label, n = 2;
     while (imported.some((x) => x.label === label)) label = `${col.label}(${n++})`;
     imported.push({ ...col, label });
   }
-  const times = added.flatMap((col) => [col.rows[0][0], col.rows[col.rows.length - 1][0]]).sort((a, b) => a - b);
-  const first = fmt(times[0]), last = fmt(times[times.length - 1]);
-  msg.className = "import-msg";
-  msg.textContent = `${added.map((c) => `「${c.label}」`).join("")}を取り込みました`
-    + `（${first}〜${last}）。前日・翌日で日を変えられます。ページを開き直すと消えます`;
-  $("importClear").hidden = false;
+  saveImported();
+  showImportMsg("取り込みました");
   // 表示している日に記録がなければ、取り込んだ記録の最初の日を表示する
-  if (!importedOnDay(day)) { day = first; showHours(24); }
+  if (!importedOnDay(day)) {
+    day = fmt(imported.flatMap((col) => col.rows.map(([ts]) => ts)).reduce((a, b) => (a < b ? a : b)));
+    showHours(24);
+  }
   load();
 };
-// ボタン: 取り込んだ線をすべて消す
+// ボタン: 取り込んだ線をすべて消す（保存した記録も消す）
 $("importClear").onclick = () => {
   imported = [];
+  saveImported();
   $("importClear").hidden = true;
   $("importMsg").hidden = true;
   load();
@@ -918,6 +962,7 @@ $("addForm").onsubmit = async (e) => {
 
 // ---- ページを開いたときに始まる処理 ----
 buildCharts();
+restoreImported();   // 前に取り込んだCSVの記録があれば、グラフに出す
 setInterval(load, 60 * 1000);   // グラフは1分ごとに読み直す
 loadNow().then(load);
 setInterval(loadNow, 5 * 1000);  // 現在値は5秒ごとに読み直す
