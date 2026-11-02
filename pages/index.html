@@ -148,11 +148,11 @@
   <section class="card compare" id="compare" hidden>
     <div class="label">センサーの比較（今の値）</div>
     <table>
-      <tr><th>センサー</th><th>温度</th><th>湿度</th></tr>
-      <tr><td>SHT31</td><td id="cmp-sht-t">--</td><td id="cmp-sht-h">--</td></tr>
-      <tr id="cmp-thdrc" hidden><td class="cmp">THD-R-C</td><td id="cmp-thdrc-t">--</td><td id="cmp-thdrc-h">--</td></tr>
-      <tr id="cmp-pt100" hidden><td class="pt">Pt100</td><td id="cmp-pt100-t">--</td><td id="cmp-pt100-h">--</td></tr>
-      <tr id="cmp-ktc" hidden><td class="ktc">K型熱電対</td><td id="cmp-ktc-t">--</td><td id="cmp-ktc-h">--</td></tr>
+      <tr><th>センサー</th><th>温度</th><th>湿度</th><th>露点温度</th></tr>
+      <tr><td>SHT31</td><td id="cmp-sht-t">--</td><td id="cmp-sht-h">--</td><td id="cmp-sht-d">--</td></tr>
+      <tr id="cmp-thdrc" hidden><td class="cmp">THD-R-C</td><td id="cmp-thdrc-t">--</td><td id="cmp-thdrc-h">--</td><td id="cmp-thdrc-d">--</td></tr>
+      <tr id="cmp-pt100" hidden><td class="pt">Pt100</td><td id="cmp-pt100-t">--</td><td id="cmp-pt100-h">--</td><td id="cmp-pt100-d">--</td></tr>
+      <tr id="cmp-ktc" hidden><td class="ktc">K型熱電対</td><td id="cmp-ktc-t">--</td><td id="cmp-ktc-h">--</td><td id="cmp-ktc-d">--</td></tr>
     </table>
     <div class="note">小さい数字は SHT31 との差。THD-R-C の誤差は 温度 ±1.0℃・湿度 ±3%（説明書の値）</div>
   </section>
@@ -403,6 +403,15 @@ function showLatest(l, isLive) {
     + (isLive ? "（リアルタイム）" : "（10分ごとに更新）");
 }
 
+// 露点温度[℃]（空気が冷えて結露しはじめる温度）を、温度 t[℃] と湿度 h[%] から計算する（マグヌスの式）
+// 湿度がないセンサー（Pt100・K型熱電対）や、測れていないときは null
+function dewPoint(t, h) {
+  if (t == null || h == null || h <= 0) return null;
+  const a = 17.62, b = 243.12;                  // 水の上の空気で使う定数（-45〜60℃ で使える）
+  const g = Math.log(h / 100) + (a * t) / (b + t);
+  return (b * g) / (a - g);
+}
+
 // SHT31（s）と比較用センサー（c.thdrc・c.pt100・c.ktc）の今の値を並べて出す
 // 比較用センサーが1つも動いていなければ表ごと隠し、動いていないセンサーの行も隠す
 function showCompare(s, c) {
@@ -416,11 +425,15 @@ function showCompare(s, c) {
     : `${val(x, u)}<span class="d">${x - base >= 0 ? "+" : "-"}${Math.abs(x - base).toFixed(1)}${u}</span>`);
   $("cmp-sht-t").textContent = val(s.temp, "℃");
   $("cmp-sht-h").textContent = val(s.hum, "%");
+  // 露点温度は、それぞれのセンサーの温度と湿度から計算する（湿度のないセンサーは "--"）
+  const sd = dewPoint(s.temp, s.hum);
+  $("cmp-sht-d").textContent = val(sd, "℃");
   names.forEach((k) => {
     $(`cmp-${k}`).hidden = !c[k];
     if (!c[k]) return;
     $(`cmp-${k}-t`).innerHTML = cell(c[k].temp, s.temp, "℃");
     $(`cmp-${k}-h`).innerHTML = cell(c[k].hum, s.hum, "%");
+    $(`cmp-${k}-d`).innerHTML = cell(dewPoint(c[k].temp, c[k].hum), sd, "℃");
   });
 }
 
