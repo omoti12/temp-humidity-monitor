@@ -225,7 +225,7 @@
       <li>温度：THD-R-C の A → GP40T の A0。A0 と G0 のあいだに 150Ω</li>
       <li>湿度：THD-R-C の B → GP40T の A1。A1 と G1 のあいだに 150Ω</li>
       <li>G0・G1 は THD-R-C の電源の −（GND）へ</li>
-      <li>THD-R-C の電源：<b>DC 24V</b>。ACアダプター（BS-ACDC シリーズ 24V、PSE マーク付き、プラグ 外径5.5mm・内径2.1mm、極性はセンタープラス＝プラグの中心が＋）→ パワーコネクター（2芯の電源用コネクター。プラグを＋と－の線に分ける）→ THD-R-C の電源の＋・－</li>
+      <li>THD-R-C の電源：<b>DC 24V</b>。ACアダプター（bitstrong BS-ACDC-2420。入力 AC100〜240V、出力 DC24.0V 2.0A（48W）、PSE マーク付き、プラグ 外径5.5mm・内径2.1mm、極性はセンタープラス＝プラグの中心が＋）→ パワーコネクター（2芯の電源用コネクター。プラグを＋と－の線に分ける）→ THD-R-C の電源の＋・－</li>
       <li>4〜20mA の電流は、24V の電源 → THD-R-C → 150Ω の抵抗 → 電源の －（GND）と、ひと回りして流れる</li>
       <li>GP40T はラズパイの上に載せる基板。ラズパイとは電気的に分けた（絶縁した）電源で動く（GPIO27 で電源を入れる）</li>
     </ul>
@@ -254,7 +254,7 @@
       <tr><td>K型熱電対の線</td><td>温度差で出る電圧</td><td class="num">約0.041mV／℃</td><td>室温どうしなら 1mV もない</td></tr>
       <tr><td>THD-R-C の出力</td><td>電流</td><td class="num">4〜20mA</td><td>温度・湿度で2本</td></tr>
       <tr><td>THD-R-C 側の 150Ω</td><td>抵抗の両端の電圧</td><td class="num">0.6〜3.0V</td><td>GP40T で測る</td></tr>
-      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V</td><td>ACアダプター → パワーコネクター（2芯）で ＋・－ に分けてつなぐ</td></tr>
+      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V（2.0A まで）</td><td>ACアダプター BS-ACDC-2420 → パワーコネクター（2芯）で ＋・－ に分けてつなぐ</td></tr>
     </table>
   </div>
 
