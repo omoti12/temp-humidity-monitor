@@ -220,7 +220,7 @@ Y2Kb の K型熱電対モジュールは Pt100 と同じ形のデータを送っ
 
 - つなぎ方：K型熱電対のモジュールも USB でラズパイにつなぐ（Pt100 と2つ同時につないでよい）
 - どちらのモジュールがどのポートかは、`systemd/pt100-logger.service` と `systemd/ktc-logger.service` の `SENSOR_PORT` で決める。
-  `ttyUSB0`・`ttyUSB1` の番号は起動のたびに入れ替わることがあるので、2つつなぐときは `ls -l /dev/serial/by-path/` で差した場所の名前を確かめて書き換える
+  `ttyUSB0`・`ttyUSB1` の番号は起動のたびに入れ替わることがあるので、差し込み口の場所（`ls -l /dev/serial/by-path/` で出る名前）で決めている。今の設定は K型熱電対が `xhci-hcd.0`、Pt100 が `xhci-hcd.1` の差し込み口
 - 記録は `/home/iot-user/templog/ktc/日付.csv`、現在値は `/dev/shm/temp-monitor/ktc.json`
 
 ```
