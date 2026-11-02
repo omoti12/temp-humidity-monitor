@@ -523,7 +523,7 @@ async function load() {
 //   ファイルはこのブラウザの中だけで読む（ラズパイやインターネットには送らない）
 //   取り込んだ記録はこのブラウザに保存し、次に開いたときも出す（新しく取り込むと入れ替わる）
 //   温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
-//   線の名前は「機器名 温度」（CSVに「機器名」の行があるとき。例: GR-3500 温度）、なければ「CSV取り込み 温度」
+//   線の名前は「機器名 温度」（例: GR-3500 温度）。機器名はCSVの「機器名」の行、なければファイル名から取る
 //   読める形
 //     ・GRAPHTEC の記録計（GR-3500 など）のCSV（「波形名」「単位」の行から列の名前と単位を読む）
 //     ・1列目が日時、2列目からが数値のCSV（1行目が見出し。このサイトのCSVダウンロードの形も読める）
@@ -580,11 +580,13 @@ function parseCsv(text, fileName) {
   // 見出しの名前（「波形名」の行がなければ、記録の前の行）
   if (!names.length && header) names = header.slice(1);
   const base = fileName.replace(/\.csv$/i, "");
+  // 「機器名」の行がないCSVは、ファイル名から日付を除いた部分を機器名にする（例: GR-3500_2026-10-31.csv → GR-3500）
+  const fileDevice = base.replace(/[_\s-]*\d{4}[-./]?\d{1,2}[-./]?\d{1,2}.*$/, "").trim();
   return cols.map((rows, i) => {
     const name = (names[i] || "").replace(/\s+/g, "") || `${base} 列${i + 2}`;
     const unit = guessUnit(name, units[i] || "");
     // 線の名前は「機器名 温度」「機器名 湿度」（機器名がなければ「CSV取り込み」）にして、取り込んだ線だとわかるようにする
-    return { label: `${device || "CSV取り込み"} ${unit === "%" ? "湿度" : "温度"}`, unit, rows };
+    return { label: `${device || fileDevice || "CSV取り込み"} ${unit === "%" ? "湿度" : "温度"}`, unit, rows };
   }).filter((col) => col.rows.length > 0);   // 数値のない列（「状態」など）は取り込まない
 }
 
