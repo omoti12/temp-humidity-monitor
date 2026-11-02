@@ -182,7 +182,7 @@ rclone ls gdrive:温湿度記録   # CSVが並べば成功
 ### 8. 比較用センサー THD-R-C（使うときだけ）
 
 4〜20mA 出力の温湿度センサー Autonics THD-R-C を RPi-GP40T（Ratoc）で読み、SHT31 と比べられるようにする。
-動かすと、サイトに「SHT31 と THD-R-C の比較（今の値）」の表と、グラフに THD-R-C の点線が出る（動かさなければ何も出ない）。
+動かすと、サイトに「SHT31 と THD-R-C の比較（今の値）」の表と、グラフに THD-R-C の線が出る（動かさなければ何も出ない）。
 
 - つなぎ方：THD-R-C の A（温度）→ GP40T の A0、B（湿度）→ A1。A0–G0 と A1–G1 のあいだに 150Ω。G0・G1 は THD-R-C の電源の −（GND）へ
 - GP40T を使うには SPI を有効にし、`/boot/firmware/config.txt` に `dtoverlay=spi0-0cs` を書いておく
@@ -199,7 +199,7 @@ sudo systemctl restart temp-web
 
 ### 9. 比較用センサー Pt100（使うときだけ）
 
-動かすと、比較の表に Pt100 の行と、温度のグラフに Pt100 の点線が出る（Pt100 に湿度はない）。
+動かすと、比較の表に Pt100 の行と、温度のグラフに Pt100 の線が出る（Pt100 に湿度はない）。
 
 - つなぎ方：Y2Kb の Pt100 温度測定モジュールを USB でラズパイにつなぐ（`/dev/ttyUSB0`）。モジュールは出荷時の設定（USB Tx mode = Auto、10秒ごと）のまま
 - 記録は `/home/iot-user/templog/pt100/日付.csv`、現在値は `/dev/shm/temp-monitor/pt100.json`
@@ -216,7 +216,7 @@ sudo systemctl restart temp-web
 ### 10. 比較用センサー K型熱電対（使うときだけ）
 
 Y2Kb の K型熱電対モジュールは Pt100 と同じ形のデータを送ってくるので、同じプログラム（`pt100_logger.py`）を名前 `ktc` で動かす。
-動かすと、比較の表に K型熱電対の行と、温度のグラフに K型熱電対の点線が出る。
+動かすと、比較の表に K型熱電対の行と、温度のグラフに K型熱電対の線が出る。
 
 - つなぎ方：K型熱電対のモジュールも USB でラズパイにつなぐ（Pt100 と2つ同時につないでよい）
 - どちらのモジュールがどのポートかは、`systemd/pt100-logger.service` と `systemd/ktc-logger.service` の `SENSOR_PORT` で決める。

@@ -248,13 +248,13 @@ function buildCharts() {
       { label: "低温注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
       { label: "低温警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
       // [7] 比較用センサー THD-R-C（記録がある日だけ出す）
-      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"), borderDash: [4, 3],
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"),
         pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
       // [8] 比較用センサー Pt100（記録がある日だけ出す）
-      { label: "Pt100", data: [], borderColor: css("--pt"), backgroundColor: css("--pt"), borderDash: [4, 3],
+      { label: "Pt100", data: [], borderColor: css("--pt"), backgroundColor: css("--pt"),
         pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
       // [9] 比較用センサー K型熱電対（記録がある日だけ出す）
-      { label: "K型熱電対", data: [], borderColor: css("--ktc"), backgroundColor: css("--ktc"), borderDash: [4, 3],
+      { label: "K型熱電対", data: [], borderColor: css("--ktc"), backgroundColor: css("--ktc"),
         pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("℃"),
@@ -267,7 +267,7 @@ function buildCharts() {
       { label: "高湿警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
       { label: "高湿注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
       // [3] 比較用センサー THD-R-C（記録がある日だけ出す）
-      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"), borderDash: [4, 3],
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"),
         pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("%"),
