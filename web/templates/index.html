@@ -85,14 +85,14 @@
   .zoombar button { font: inherit; font-size: .85rem; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line);
                     background: var(--card); color: var(--text); cursor: pointer; }
   .zoombar .hint { color: var(--muted); font-size: .8rem; }
-  .chart-box { position: relative; height: 260px; }
+  .chart-box { position: relative; height: 320px; }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
   /* ---- スマホなど画面が狭いとき（幅600px以下）---- */
   @media (max-width: 600px) {
     .now { grid-template-columns: 1fr 1fr; }
     .now .card:last-child { grid-column: span 2; }
     .value { font-size: 1.9rem; }
-    .chart-box { height: 220px; }
+    .chart-box { height: 240px; }
   }
 </style>
 </head>
@@ -133,6 +133,7 @@
     <button id="next">翌日 ▶</button>
     <button id="today">今日</button>
     <a id="dl" href="#">CSVダウンロード</a>
+    <button id="saveGraph">グラフを画像で保存</button>
   </div>
 
   <!-- グラフの表示範囲（拡大）のボタン。温度と湿度のグラフは一緒に動く -->
@@ -199,10 +200,13 @@ function lineOpts(unit) {
     responsive: true, maintainAspectRatio: false, animation: false, spanGaps: false,
     // グラフにマウスを乗せると、その時刻の値をまとめて表示する
     interaction: { mode: "index", intersect: false },
-    // 名前が "_" で始まるデータ（最高・最低の帯）は、凡例と吹き出しに出さない
-    plugins: { legend: { labels: { color: css("--muted"), filter: (i) => !i.text.startsWith("_") } },
-               tooltip: { filter: (i) => !i.dataset.label.startsWith("_"),
-                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}${unit}` } },
+    // 凡例: 名前が "_" で始まるデータ（最高・最低の帯）と、この日に記録のない線は出さない
+    // 吹き出し: 測った値だけを出す（警報・注意の基準の線はグラフを見ればわかるので出さない）
+    plugins: { legend: { labels: { color: css("--muted"), boxWidth: 28, boxHeight: 3, padding: 14,
+                                   filter: (i, d) => !i.text.startsWith("_")
+                                     && d.datasets[i.datasetIndex].data.some((v) => v != null) } },
+               tooltip: { filter: (i) => !i.dataset.label.startsWith("_") && !i.dataset.threshold && i.parsed.y != null,
+                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}${unit}` } },
                // 拡大・移動の設定（横方向＝時刻だけ。温度と湿度のグラフは syncRange で一緒に動かす）
                zoom: {
                  limits: { x: { min: 0, max: slots.length - 1, minRange: 5 } },
@@ -234,37 +238,37 @@ function buildCharts() {
     type: "line",
     data: { labels: slots, datasets: [
       // [0] 最高 と [1] 最低：この2本の間を薄く塗って「帯」にする
-      { label: "_max", data: [], borderWidth: 0, pointRadius: 0, fill: "+1", backgroundColor: temp + "22" },
-      { label: "_min", data: [], borderWidth: 0, pointRadius: 0, fill: false },
+      { label: "_max", data: [], borderWidth: 0, pointRadius: 0, pointHoverRadius: 0, fill: "+1", backgroundColor: temp + "22" },
+      { label: "_min", data: [], borderWidth: 0, pointRadius: 0, pointHoverRadius: 0, fill: false },
       // [2] 温度の平均
-      { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 2, borderWidth: 2 },
+      { label: "温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5 },
       // [3]〜[6] 警報（破線）と注意（点線）の基準
-      { label: "高温警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
-      { label: "高温注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
-      { label: "低温注意", data: [], borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
-      { label: "低温警報", data: [], borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高温警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高温注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--cold-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "低温警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--out"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
       // [7] 比較用センサー THD-R-C（記録がある日だけ出す）
       { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"), borderDash: [4, 3],
-        pointRadius: 1.5, borderWidth: 2, hidden: true },
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
       // [8] 比較用センサー Pt100（記録がある日だけ出す）
       { label: "Pt100", data: [], borderColor: css("--pt"), backgroundColor: css("--pt"), borderDash: [4, 3],
-        pointRadius: 1.5, borderWidth: 2, hidden: true },
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
       // [9] 比較用センサー K型熱電対（記録がある日だけ出す）
       { label: "K型熱電対", data: [], borderColor: css("--ktc"), backgroundColor: css("--ktc"), borderDash: [4, 3],
-        pointRadius: 1.5, borderWidth: 2, hidden: true },
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("℃"),
   });
   humChart = new Chart($("humChart"), {
     type: "line",
     data: { labels: slots, datasets: [
-      { label: "湿度", data: [], borderColor: hum, backgroundColor: hum, pointRadius: 2, borderWidth: 2 },
+      { label: "湿度", data: [], borderColor: hum, backgroundColor: hum, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5 },
       // [1] [2] 湿度の警報（破線）と注意（点線）の基準（湿度の警報を使う設定のときだけ線が出る）
-      { label: "高湿警報", data: [], borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
-      { label: "高湿注意", data: [], borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高湿警報", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--warn"), borderDash: [6, 4], pointRadius: 0, borderWidth: 1.5 },
+      { label: "高湿注意", data: [], threshold: true, pointHoverRadius: 0, borderColor: css("--hot-warn"), borderDash: [2, 3], pointRadius: 0, borderWidth: 1.5 },
       // [3] 比較用センサー THD-R-C（記録がある日だけ出す）
       { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"), borderDash: [4, 3],
-        pointRadius: 1.5, borderWidth: 2, hidden: true },
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("%"),
   });
@@ -409,6 +413,52 @@ $("zoomHint").textContent = isTouch
   ? "2本指で拡大・1本指で左右に移動"
   : "ドラッグで範囲を選んで拡大・Shift＋ドラッグで移動・Ctrl＋ホイールで拡大縮小";
 
+// ボタン: 温度と湿度のグラフを1枚の画像（PNG）にまとめて保存する（拡大しているときは、見えている範囲）
+function saveGraph() {
+  const r = window.devicePixelRatio || 1;       // 画面の細かさ（グラフはこの倍率で描かれている）
+  const pad = 20 * r, font = getComputedStyle(document.body).fontFamily;
+  const charts = [tempChart, humChart];
+  // マウスを乗せたときの吹き出しは画像に入れない
+  for (const c of charts) {
+    c.setActiveElements([]);
+    c.tooltip.setActiveElements([], { x: 0, y: 0 });
+    c.update("none");
+  }
+  const w = Math.max(...charts.map((c) => c.canvas.width)) + pad * 2;
+  const h = pad + 30 * r + charts.reduce((sum, c) => sum + 26 * r + c.canvas.height + pad, 0);
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const g = cv.getContext("2d");
+  g.fillStyle = css("--card");                  // 背景（画面と同じ色）
+  g.fillRect(0, 0, w, h);
+  g.textBaseline = "top";
+  // 見出し: 温湿度モニター 設置場所 日付
+  const place = $("place").textContent;
+  g.fillStyle = css("--text");
+  g.font = `bold ${18 * r}px ${font}`;
+  g.fillText(`温湿度モニター${place ? "　" + place : ""}　${day}`, pad, pad);
+  // グラフを上から順に貼る（それぞれの上に、画面と同じ小見出しを書く）
+  let y = pad + 30 * r;
+  for (const c of charts) {
+    g.fillStyle = css("--muted");
+    g.font = `${13 * r}px ${font}`;
+    g.fillText(c.canvas.closest(".chart-card").querySelector(".label").textContent, pad, y);
+    g.drawImage(c.canvas, pad, y + 26 * r);
+    y += 26 * r + c.canvas.height + pad;
+  }
+  // できた画像をダウンロードさせる
+  cv.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `temp-humidity_${day}.png`;   // 日本語の名前だと付かないブラウザがあるので英字にする
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+}
+
 // 表示する日を n 日ずらす（前日 = -1、翌日 = +1）。日を変えたら拡大は元に戻す
 function shift(n) {
   const t = new Date(day + "T00:00:00");
@@ -420,6 +470,7 @@ function shift(n) {
 
 // ボタンを押したときの動き
 $("prev").onclick = () => shift(-1);
+$("saveGraph").onclick = saveGraph;
 $("next").onclick = () => shift(1);
 $("today").onclick = () => { day = fmt(new Date()); showHours(24); load(); };
 $("day").onchange = (e) => { if (e.target.value) { day = e.target.value; showHours(24); load(); } };
