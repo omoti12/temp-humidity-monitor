@@ -17,13 +17,13 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c;
-    --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e; --gr: #ae3ec9; --code: #f1f3f5;
+    --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e; --code: #f1f3f5;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b;
-      --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a; --gr: #e599f7; --code: #262a33;
+      --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a; --code: #262a33;
     }
   }
   * { box-sizing: border-box; }
@@ -43,7 +43,7 @@
   .tag { display: inline-block; font-size: .75rem; font-weight: 700; padding: 1px 8px; border-radius: 99px;
          border: 1px solid currentColor; margin-left: 6px; vertical-align: 2px; }
   .sht { color: var(--temp); } .thd { color: var(--cmp); } .pt { color: var(--pt); }
-  .ktc { color: var(--ktc); } .gr { color: var(--gr); }
+  .ktc { color: var(--ktc); }
   /* 測ってから数字になるまでの流れ（左から右へ。狭い画面では上から下へ） */
   .flow { display: flex; align-items: stretch; gap: 0; margin: 10px 0 4px; overflow: hidden; }
   .step { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
@@ -88,7 +88,6 @@
     <a href="#pt100">Pt100</a>
     <a href="#ktc">K型熱電対</a>
     <a href="#thdrc">THD-R-C</a>
-    <a href="#gr3500">GR-3500（CSV取り込み）</a>
     <a href="#power">電圧・電流のまとめ</a>
     <a href="#pi">ラズパイの中の処理</a>
     <a href="#site">サイトに出るまで</a>
@@ -113,7 +112,6 @@
         <tr><td><span class="tag pt">Pt100</span></td><td>温度</td><td>抵抗（0℃で100Ω）</td><td>Y2Kb の Pt100 モジュール → USB</td><td>比較用</td></tr>
         <tr><td><span class="tag ktc">K型熱電対</span></td><td>温度</td><td>ごく小さい電圧（1℃で約0.04mV）</td><td>Y2Kb の K型熱電対モジュール → USB</td><td>比較用</td></tr>
         <tr><td><span class="tag thd">THD-R-C</span></td><td>温度・湿度</td><td>電流 4〜20mA</td><td>150Ωの抵抗 → RPi-GP40T（電圧を測る基板）</td><td>比較用（つないでいるときだけ）</td></tr>
-        <tr><td><span class="tag gr">GR-3500</span></td><td>温度・湿度</td><td>Pt100 の抵抗・湿度計の電流</td><td>記録計 GR-3500（ラズパイにはつながない）</td><td>別の記録計。CSVをサイトに取り込んで比べる</td></tr>
       </table>
     </div>
   </div>
@@ -244,37 +242,6 @@
   </div>
 
   <!-- ============================================================ -->
-  <h2 id="gr3500">GR-3500（別の記録計・CSVで取り込み）<span class="tag gr">比較用</span></h2>
-  <div class="card">
-    <p class="muted" style="margin-top:0">ラズパイにはつながっていない別の記録計。記録計が1分ごとに記録したCSVを、サイトの「CSVを取り込む」で読み込んでグラフに重ねる。</p>
-    <h3>温度（CH03：オンド1）</h3>
-    <div class="flow">
-      <div class="step"><b>Pt100</b>温度で抵抗が変わる<span class="v">0℃で100Ω</span></div>
-      <div class="arrow"></div>
-      <div class="step"><b>GR-3500（Pt100 レンジ）</b>記録計が直接抵抗を測り、温度に変換<span class="v">小数1桁</span></div>
-      <div class="arrow"></div>
-      <div class="step"><b>記録</b>1分ごとにCSVへ<span class="v">単位 ℃</span></div>
-    </div>
-    <h3>湿度（CH06：シツド1）</h3>
-    <div class="flow">
-      <div class="step"><b>湿度センサー</b>湿度を電流で出す<span class="v">4〜20mA</span></div>
-      <div class="arrow"></div>
-      <div class="step"><b>500Ω の抵抗</b>電流を電圧に変える<span class="v">2〜10V</span></div>
-      <div class="arrow"></div>
-      <div class="step"><b>GR-3500（±10V レンジ）</b>電圧を測り、記録計の「スケーリング」で % に直す<span class="v">2V = 0%、10V = 100%</span></div>
-      <div class="arrow"></div>
-      <div class="step"><b>記録</b>1分ごとにCSVへ<span class="v">単位 RH</span></div>
-    </div>
-    <span class="formula">電圧[V] = 電流[mA] × 500Ω ÷ 1000   （4mA → 2V、20mA → 10V）
-湿度[%] = (電圧 − 2) ÷ 8 × 100       （記録計のスケーリング：計測値 2〜10 → 表示値 0〜100）</span>
-    <ul>
-      <li>電源を入れた直後の数分は、湿度が100%を超えることがある（10/30 15:27 に 112.5% など）</li>
-      <li>CSVは1行目に「機器名」があり、線の名前は「GR-3500 温度」「GR-3500 湿度」になる</li>
-      <li>取り込んだ記録は、取り込んだパソコンのブラウザの中にだけ保存される（ラズパイやインターネットには送らない）</li>
-    </ul>
-  </div>
-
-  <!-- ============================================================ -->
   <h2 id="power">電圧・電流のまとめ</h2>
   <div class="card table-wrap">
     <table>
@@ -288,8 +255,6 @@
       <tr><td>THD-R-C の出力</td><td>電流</td><td class="num">4〜20mA</td><td>温度・湿度で2本</td></tr>
       <tr><td>THD-R-C 側の 150Ω</td><td>抵抗の両端の電圧</td><td class="num">0.6〜3.0V</td><td>GP40T で測る</td></tr>
       <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V</td><td>ACアダプター → パワーコネクター（2芯）で ＋・－ に分けてつなぐ</td></tr>
-      <tr><td>GR-3500 の湿度センサーの出力</td><td>電流</td><td class="num">4〜20mA</td><td></td></tr>
-      <tr><td>GR-3500 側の 500Ω</td><td>抵抗の両端の電圧</td><td class="num">2〜10V</td><td>GR-3500 の ±10V レンジで測る</td></tr>
     </table>
   </div>
 
