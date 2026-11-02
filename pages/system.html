@@ -227,7 +227,8 @@
       <li>温度：THD-R-C の A → GP40T の A0。A0 と G0 のあいだに 150Ω</li>
       <li>湿度：THD-R-C の B → GP40T の A1。A1 と G1 のあいだに 150Ω</li>
       <li>G0・G1 は THD-R-C の電源の −（GND）へ</li>
-      <li>THD-R-C の電源：専用の直流電源 <span class="check">［要確認：電圧（説明書の値）］</span></li>
+      <li>THD-R-C の電源：<b>DC 24V</b>。ACアダプター（24V 2A、PSE マーク付き、プラグ 5.5×2.1mm）→ パワーコネクター（2芯の電源用コネクター。プラグを＋と－の線に分ける）→ THD-R-C の電源の＋・－</li>
+      <li>4〜20mA の電流は、24V の電源 → THD-R-C → 150Ω の抵抗 → 電源の －（GND）と、ひと回りして流れる</li>
       <li>GP40T はラズパイの上に載せる基板。ラズパイとは電気的に分けた（絶縁した）電源で動く（GPIO27 で電源を入れる）</li>
     </ul>
     <h3>数字の計算</h3>
@@ -287,7 +288,7 @@
       <tr><td>K型熱電対の線</td><td>温度差で出る電圧</td><td class="num">約0.041mV／℃</td><td>室温どうしなら 1mV もない</td></tr>
       <tr><td>THD-R-C の出力</td><td>電流</td><td class="num">4〜20mA</td><td>温度・湿度で2本</td></tr>
       <tr><td>THD-R-C 側の 150Ω</td><td>抵抗の両端の電圧</td><td class="num">0.6〜3.0V</td><td>GP40T で測る</td></tr>
-      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">―</td><td><span class="check">［要確認］</span></td></tr>
+      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V（2A まで）</td><td>ACアダプター → パワーコネクター（2芯）で ＋・－ に分けてつなぐ</td></tr>
       <tr><td>GR-3500 の湿度センサーの出力</td><td>電流</td><td class="num">4〜20mA</td><td></td></tr>
       <tr><td>GR-3500 側の 500Ω</td><td>抵抗の両端の電圧</td><td class="num">2〜10V</td><td>GR-3500 の ±10V レンジで測る</td></tr>
     </table>
