@@ -15,6 +15,8 @@
 #   /api/now          … 現在値（JSON）。ログイン不要
 #   /api/recipients   … 警報メールの宛先の表示・追加・削除（管理用パスワードが必要）
 #   /api/settings     … 警報の設定（2段階の温度の基準など）の表示・変更（管理用パスワードが必要）
+#   /api/import       … サイトで取り込んだCSVの記録の保存・削除（管理用パスワードが必要）
+#                        保存すると公開サイトに載り、見ている人全員のグラフに出る
 #   /download?day=日付 … その日のCSVをダウンロード
 #
 # 動かし方
@@ -38,7 +40,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import alarm_settings  # noqa: E402
 import alert_mail  # noqa: E402
-import compare_data  # noqa: E402  比較用センサー（THD-R-C・Pt100）の記録
+import compare_data  # noqa: E402  比較用センサー（THD-R-C・Pt100・K型熱電対）の記録・取り込んだCSV
 
 # ---- 設定値（環境変数で上書きできる。temp-web.service の Environment= で設定）----
 LOG_DIR = os.environ.get("LOG_DIR", "/home/iot-user/templog")
@@ -51,6 +53,8 @@ WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "")
 
 # Webサーバー本体
 app = Flask(__name__)
+# 送られてくるデータの大きさの上限（取り込んだCSVの記録を受け取るため。数日分で数百KB）
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
 
 @app.before_request
@@ -58,7 +62,7 @@ def require_login():
     # どのページを開くときも、最初にここを通る（パスワードの確認）
     # 現在値だけは公開サイト（GitHub Pages）から読めるようにログイン不要にする
     # 宛先の管理（/api/recipients）は、下の check_admin() で別の管理用パスワードを確認する
-    if not WEB_PASSWORD or request.path in ("/api/now", "/api/recipients", "/api/settings"):
+    if not WEB_PASSWORD or request.path in ("/api/now", "/api/recipients", "/api/settings", "/api/import"):
         return None
     # ブラウザが送ってきたユーザー名・パスワードを確認する
     # （hmac.compare_digest は、比べる時間から中身を推測されにくい比べ方）
@@ -353,13 +357,83 @@ def api_settings():
     except ValueError as e:
         return admin_error(str(e), 400)
     print(f"警報の設定を変更: {s}", flush=True)
-    # 公開サイトのグラフの線もすぐ変わるよう、裏で公開を1回実行する（終わるのは待たない）
+    # 公開サイトのグラフの線もすぐ変わるよう、裏で公開を1回実行する
+    publish_soon()
+    return admin_cors(jsonify({"settings": s}))
+
+
+# ============================================================
+# 取り込んだCSVの記録（公開サイトの「CSVを取り込む」から使う）
+#   CSVはブラウザで読んで、列ごとの [時刻, 値] にしてから送ってくる
+#   保存すると pages/publish.py が公開サイトの data/import.json に載せる（見ている人全員に出る）
+# ============================================================
+IMPORT_MAX_COLS = 10            # 線の数の上限
+IMPORT_MAX_ROWS = 100000        # 1本の線の記録の数の上限（1分ごとで約2か月分）
+
+
+def check_import(data):
+    """送られてきた記録を確かめて、保存する形に直して返す。おかしければ ValueError を出す"""
+    cols = data.get("columns") if isinstance(data, dict) else None
+    if not isinstance(cols, list) or not 1 <= len(cols) <= IMPORT_MAX_COLS:
+        raise ValueError(f"取り込む線は1〜{IMPORT_MAX_COLS}本にしてください")
+    out = []
+    for c in cols:
+        label = str(c.get("label", "")).strip()[:40] if isinstance(c, dict) else ""
+        unit = c.get("unit") if isinstance(c, dict) else None
+        rows = c.get("rows") if isinstance(c, dict) else None
+        if not label or unit not in ("℃", "%") or not isinstance(rows, list) or not rows:
+            raise ValueError("取り込んだ記録の形が正しくありません")
+        if len(rows) > IMPORT_MAX_ROWS:
+            raise ValueError(f"記録が多すぎます（1本の線につき{IMPORT_MAX_ROWS}件まで）")
+        clean = []
+        for r in rows:
+            # [時刻（1970年からのミリ秒）, 値] の形だけを受け取る
+            if not (isinstance(r, list) and len(r) == 2
+                    and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in r)):
+                raise ValueError("取り込んだ記録の形が正しくありません")
+            clean.append([int(r[0]), round(float(r[1]), 2)])
+        out.append({"label": label, "unit": unit, "rows": clean})
+    return {"saved": datetime.now().astimezone().isoformat(timespec="seconds"), "columns": out}
+
+
+def publish_soon():
+    # 公開サイトにすぐ反映されるよう、裏で公開を1回実行する（終わるのは待たない）
     try:
         subprocess.Popen([sys.executable, PUBLISH_SCRIPT],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         pass    # 失敗しても、10分ごとの自動の公開で反映される
-    return admin_cors(jsonify({"settings": s}))
+
+
+@app.route("/api/import", methods=["PUT", "DELETE", "OPTIONS"])
+def api_import():
+    if request.method == "OPTIONS":
+        return admin_cors(Response(status=204))
+    err = check_admin()
+    if err:
+        return err
+    path = compare_data.IMPORT_PATH
+    # 削除: 取り込んだ記録を消す（公開サイトの線も消える）
+    if request.method == "DELETE":
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        print("取り込んだCSVの記録を削除", flush=True)
+        publish_soon()
+        return admin_cors(jsonify({"ok": True}))
+    # 保存: 前に取り込んだ記録と入れ替える
+    try:
+        data = check_import(request.get_json(silent=True))
+    except ValueError as e:
+        return admin_error(str(e), 400)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(path + ".tmp", path)     # 書きかけのファイルが公開されないよう、置き換えで保存する
+    print(f"CSVの記録を取り込み: {', '.join(c['label'] for c in data['columns'])}", flush=True)
+    publish_soon()
+    return admin_cors(jsonify({"ok": True, "saved": data["saved"]}))
 
 
 @app.route("/download")

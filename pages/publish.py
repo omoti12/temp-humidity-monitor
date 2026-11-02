@@ -147,6 +147,13 @@ def build():
                       "status": st or "正常", "hum_status": alarm_settings.hum_status(h)}
             break
 
+    # サイトの「CSVを取り込む」で取り込んだ記録。あれば data/import.json に載せ、消されていたら公開からも消す
+    out = os.path.join(data_dir, "import.json")
+    if os.path.exists(compare_data.IMPORT_PATH):
+        shutil.copyfile(compare_data.IMPORT_PATH, out)
+    elif os.path.exists(out):
+        os.remove(out)
+
     # サイトが最初に読むファイル。ラズパイの現在値の窓口に届かないときは、この値を表示する
     write_json(os.path.join(data_dir, "latest.json"), {
         "updated": datetime.now().astimezone().isoformat(),

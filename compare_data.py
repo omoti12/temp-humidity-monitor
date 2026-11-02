@@ -17,6 +17,8 @@ LOG_BASE = os.environ.get("LOG_DIR", "/home/iot-user/templog")
 NOW_DIR = os.environ.get("COMPARE_NOW_DIR", "/dev/shm/temp-monitor")
 STEP_MIN = 10          # グラフの間隔（分）。SHT31 のグラフと同じ
 SENSORS = ("thdrc", "pt100", "ktc")    # サイトに出す比較用センサーの名前
+# サイトの「CSVを取り込む」で取り込んだ記録（ほかの記録計のCSV）。1つだけ置き、新しく取り込むと入れ替わる
+IMPORT_PATH = os.path.join(LOG_BASE, "import", "import.json")
 
 
 def log_dir(name):
