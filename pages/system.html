@@ -124,7 +124,7 @@
     <div class="flow">
       <div class="step"><b>SHT31 の中</b>温度と湿度を測り、センサーの中で 0〜65535 の数字に変換<span class="v">デジタル 16ビット</span></div>
       <div class="arrow"></div>
-      <div class="step"><b>I2C（線4本）</b>ラズパイが「測って」と命令し、数字を受け取る<span class="v">3.3V の信号</span></div>
+      <div class="step"><b>I2C（線4本）</b>ラズパイが「測って」と命令し、数字を受け取る<span class="v">電源・信号とも 3.3V</span></div>
       <div class="arrow"></div>
       <div class="step"><b>ラズパイ</b>数字を ℃・% に計算し、壊れていないか確認（CRC）<span class="v">5秒ごと</span></div>
       <div class="arrow"></div>
@@ -133,8 +133,14 @@
     <h3>つなぎ方</h3>
     <ul>
       <li>センサー：Adafruit SHT31-D（基板の上に SHT31 が載ったもの）</li>
-      <li>ラズパイの I2C：SDA = GPIO2（3番ピン）、SCL = GPIO3（5番ピン）、GND、電源（VIN）の4本</li>
-      <li>電源：ラズパイから供給（SHT31-D は 2.5〜5.5V で動く）。3.3V と 5V のどちらのピンにつないでいるか <span class="check">［要確認］</span></li>
+      <li>ラズパイのピン → ブレッドボード → SHT31-D の4本（線の色は今の配線）
+        <ul>
+          <li>緑：1番ピン（3.3V）→ ブレッドボードの ＋ の列 → SHT31-D の VIN</li>
+          <li>茶：6番ピン（GND）→ ブレッドボードの － の列 → SHT31-D の GND</li>
+          <li>紫：3番ピン（GPIO2 = SDA、データ）→ SHT31-D の SDA</li>
+          <li>青：5番ピン（GPIO3 = SCL、時計の合図）→ SHT31-D の SCL</li>
+        </ul></li>
+      <li>電源：ラズパイの <b>3.3V</b>（SHT31-D は 2.5〜5.5V で動く）</li>
       <li>ADDR ピンを VIN につないで、I2C の番号（アドレス）を <code>0x45</code> にしている</li>
     </ul>
     <h3>数字の計算（データシートの式）</h3>
@@ -274,7 +280,7 @@
     <table>
       <tr><th>場所</th><th>かかっているもの</th><th>大きさ</th><th>メモ</th></tr>
       <tr><td>ラズパイの電源</td><td>直流電圧</td><td class="num">5V（5A まで）</td><td>ラズパイ5用の 27W アダプタ</td></tr>
-      <tr><td>SHT31 の電源</td><td>直流電圧</td><td class="num">3.3V または 5V</td><td>ラズパイのピンから <span class="check">［要確認］</span></td></tr>
+      <tr><td>SHT31 の電源</td><td>直流電圧</td><td class="num">3.3V</td><td>ラズパイの1番ピンから（ブレッドボードの ＋ の列を通る）</td></tr>
       <tr><td>SHT31 の通信（I2C）</td><td>信号の電圧</td><td class="num">3.3V</td><td>ラズパイの GPIO は 3.3V（5V をかけると壊れる）</td></tr>
       <tr><td>USB モジュール（Pt100・K型）</td><td>USB の電源</td><td class="num">5V</td><td>ラズパイの USB 差し込み口から</td></tr>
       <tr><td>Pt100 の線</td><td>モジュールが流す測定用の電流</td><td class="num">小さい一定の電流</td><td>値はモジュールの説明書 <span class="check">［要確認］</span></td></tr>
