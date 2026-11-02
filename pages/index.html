@@ -527,7 +527,7 @@ async function load() {
 // ほかの記録計のCSVを取り込んで、グラフに重ねる
 //   ファイルはブラウザで読み、列ごとの [時刻, 値] にしてラズパイ（/api/import）に送る（管理用パスワードが必要）
 //   ラズパイが公開サイトの data/import.json に載せるので、見ている人全員のグラフに出る
-//   取り込める記録は1つだけ。新しく取り込むと、前の記録と入れ替わる
+//   取り込むたびに記録が足されていく（同じ線の同じ日をもう一度取り込むと、その日の分だけ入れ替わる）
 //   温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
 //   線の名前は「機器名 温度」（例: GR-3500 温度）。機器名はCSVの「機器名」の行、なければファイル名から取る
 //   読める形
@@ -695,31 +695,31 @@ $("importFile").onchange = async (e) => {
     msg.textContent = "取り込める記録が見つかりませんでした（1列目が日時のCSVか確認してください）";
     return;
   }
-  // 一度に複数のファイルを選んで同じ名前の線ができたら、名前の後ろに番号を付けて見分ける
+  // 一度に複数のファイル（例: 10/31 と 11/1）を選んだときは、同じ名前の線を1本にまとめる
   const cols = [];
   for (const col of added) {
-    let label = col.label, n = 2;
-    while (cols.some((x) => x.label === label)) label = `${col.label}(${n++})`;
-    cols.push({ ...col, label });
+    const same = cols.find((x) => x.label === col.label);
+    if (same) same.rows = same.rows.concat(col.rows).sort((a, b) => a[0] - b[0]);
+    else cols.push({ ...col });
   }
   msg.className = "import-msg";
   msg.textContent = "ラズパイに送っています...";
+  let saved;
   try {
-    await adminCall("PUT", { columns: cols.map((c) => ({ ...c, rows: c.rows.map(([ts, v]) => [ts.getTime(), v]) })) },
-                    IMPORT_URL);
+    saved = await adminCall("PUT", { columns: cols.map((c) => ({ ...c, rows: c.rows.map(([ts, v]) => [ts.getTime(), v]) })) },
+                            IMPORT_URL);
   } catch (err) {
     msg.className = "import-msg error";
     msg.textContent = `取り込めませんでした：${err.message}`;
     return;
   }
-  imported = cols;
+  // ラズパイが前の記録と足し合わせた、全部の記録を出す
+  imported = saved.columns.map((col) => ({ ...col, rows: col.rows.map(([t, v]) => [new Date(t), v]) }));
   importLocalUntil = Date.now() + 15 * 60 * 1000;
   showImportMsg("取り込みました（見ている人全員のグラフに、1〜2分で出ます）");
-  // 表示している日に記録がなければ、取り込んだ記録の最初の日を表示する
-  if (!importedOnDay(day)) {
-    day = fmt(imported.flatMap((col) => col.rows.map(([ts]) => ts)).reduce((a, b) => (a < b ? a : b)));
-    showHours(24);
-  }
+  // 今回取り込んだ記録の最初の日を表示する
+  day = fmt(cols.flatMap((col) => col.rows.map(([ts]) => ts)).reduce((a, b) => (a < b ? a : b)));
+  showHours(24);
   load();
 };
 // ボタン: 取り込んだ線を消す（ラズパイの記録も消すので、全員のグラフから消える）

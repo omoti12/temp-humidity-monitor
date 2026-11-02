@@ -366,13 +366,14 @@ def api_settings():
 # 取り込んだCSVの記録（公開サイトの「CSVを取り込む」から使う）
 #   CSVはブラウザで読んで、列ごとの [時刻, 値] にしてから送ってくる
 #   保存すると pages/publish.py が公開サイトの data/import.json に載せる（見ている人全員に出る）
+#   取り込むたびに記録を足していく。同じ名前の線（例: GR-3500 温度）で同じ日の記録があれば、その日の分だけ入れ替える
 # ============================================================
 IMPORT_MAX_COLS = 10            # 線の数の上限
-IMPORT_MAX_ROWS = 100000        # 1本の線の記録の数の上限（1分ごとで約2か月分）
+IMPORT_MAX_ROWS = 100000        # 1本の線の記録の数の上限（1分ごとで約2か月分。足していった合計で数える）
 
 
 def check_import(data):
-    """送られてきた記録を確かめて、保存する形に直して返す。おかしければ ValueError を出す"""
+    """送られてきた記録を確かめて、線のリストに直して返す。おかしければ ValueError を出す"""
     cols = data.get("columns") if isinstance(data, dict) else None
     if not isinstance(cols, list) or not 1 <= len(cols) <= IMPORT_MAX_COLS:
         raise ValueError(f"取り込む線は1〜{IMPORT_MAX_COLS}本にしてください")
@@ -393,7 +394,28 @@ def check_import(data):
                 raise ValueError("取り込んだ記録の形が正しくありません")
             clean.append([int(r[0]), round(float(r[1]), 2)])
         out.append({"label": label, "unit": unit, "rows": clean})
-    return {"saved": datetime.now().astimezone().isoformat(timespec="seconds"), "columns": out}
+    return out
+
+
+def merge_import(old_cols, new_cols):
+    """前に取り込んだ線（old_cols）に、新しく取り込んだ線（new_cols）を足して返す。
+    同じ名前の線は記録をまとめ、新しい記録がある日は、その日の分だけ新しい記録に入れ替える（二重にしない）"""
+    def day_of(ms):
+        # 記録の時刻（ミリ秒）→ ラズパイの時計（日本時間）での日付
+        return datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d")
+    cols = {c["label"]: c for c in old_cols}
+    for c in new_cols:
+        old = cols.get(c["label"])
+        if old:
+            days = {day_of(t) for t, _ in c["rows"]}
+            kept = [r for r in old["rows"] if day_of(r[0]) not in days]
+            c = {**c, "rows": sorted(kept + c["rows"], key=lambda r: r[0])}
+        cols[c["label"]] = c
+    if len(cols) > IMPORT_MAX_COLS:
+        raise ValueError(f"取り込んだ線が{IMPORT_MAX_COLS}本を超えます。「取り込んだ線を消す」で一度消してから取り込んでください")
+    if any(len(c["rows"]) > IMPORT_MAX_ROWS for c in cols.values()):
+        raise ValueError("取り込んだ記録が多すぎます。「取り込んだ線を消す」で一度消してから取り込んでください")
+    return list(cols.values())
 
 
 def publish_soon():
@@ -422,18 +444,23 @@ def api_import():
         print("取り込んだCSVの記録を削除", flush=True)
         publish_soon()
         return admin_cors(jsonify({"ok": True}))
-    # 保存: 前に取り込んだ記録と入れ替える
+    # 保存: 前に取り込んだ記録に足す
     try:
-        data = check_import(request.get_json(silent=True))
+        old = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                old = json.load(f).get("columns", [])
+        cols = merge_import(old, check_import(request.get_json(silent=True)))
     except ValueError as e:
         return admin_error(str(e), 400)
+    data = {"saved": datetime.now().astimezone().isoformat(timespec="seconds"), "columns": cols}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(path + ".tmp", path)     # 書きかけのファイルが公開されないよう、置き換えで保存する
     print(f"CSVの記録を取り込み: {', '.join(c['label'] for c in data['columns'])}", flush=True)
     publish_soon()
-    return admin_cors(jsonify({"ok": True, "saved": data["saved"]}))
+    return admin_cors(jsonify({"ok": True, **data}))    # 足したあとの全部の記録を返す
 
 
 @app.route("/download")
