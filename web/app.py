@@ -101,7 +101,7 @@ def load(day):
 
 
 def every_10min(rows):
-    """1分ごとの記録を10分単位にまとめ、平均・最高・最低を出す。"""
+    """1分ごとの記録を10分単位にまとめ、平均・最高・最低を出す（露点温度は平均）。"""
     buckets = {}
     for ts, t, h, _ in rows:
         # 時刻を10分単位に切り捨てる（例: 10:37 → 10:30）。同じ箱に入れる
@@ -111,13 +111,16 @@ def every_10min(rows):
     for k in sorted(buckets):
         ts = [v[0] for v in buckets[k]]
         hs = [v[1] for v in buckets[k]]
-        # グラフ1点分のデータ（温度は平均・最高・最低、湿度は平均）
+        # 露点温度は1分ごとの温度・湿度から計算してから平均する
+        ds = [d for d in (alarm_settings.dew_point(t, h) for t, h in buckets[k]) if d is not None]
+        # グラフ1点分のデータ（温度は平均・最高・最低、湿度・露点温度は平均）
         out.append({
             "time": k.strftime("%H:%M"),
             "temp": round(sum(ts) / len(ts), 1),
             "temp_max": max(ts),
             "temp_min": min(ts),
             "hum": round(sum(hs) / len(hs), 1),
+            "dew": round(sum(ds) / len(ds), 1) if ds else None,
         })
     return out
 

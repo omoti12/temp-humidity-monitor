@@ -94,6 +94,13 @@
                     background: var(--card); color: var(--text); cursor: pointer; }
   .zoombar .hint { color: var(--muted); font-size: .8rem; }
   .chart-box { position: relative; height: 320px; }
+  .chart-box[hidden] { display: none; }
+  /* 温度・露点温度の切り替えボタン（選んでいる方を濃くする） */
+  .chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+  .switch { display: flex; gap: 4px; }
+  .switch button { font: inherit; font-size: .85rem; padding: 3px 12px; border-radius: 8px; border: 1px solid var(--line);
+                   background: var(--card); color: var(--text); cursor: pointer; }
+  .switch button.on { background: var(--text); color: var(--card); border-color: var(--text); }
   .empty { color: var(--muted); text-align: center; padding: 40px 0; }
   /* ---- 警報メールの宛先（管理）---- */
   .admin { margin-top: 24px; }
@@ -185,9 +192,17 @@
   </div>
 
   <!-- グラフを描く場所 -->
+  <!-- 上のグラフは「温度」と「露点温度」をボタンで切り替える -->
   <div class="card chart-card">
-    <div class="label">温度（10分ごとの平均、薄い帯は最高〜最低）</div>
-    <div class="chart-box"><canvas id="tempChart"></canvas></div>
+    <div class="chart-head">
+      <div class="label" id="topLabel">温度（10分ごとの平均、薄い帯は最高〜最低）</div>
+      <div class="switch">
+        <button data-top="temp">温度</button>
+        <button data-top="dew">露点温度</button>
+      </div>
+    </div>
+    <div class="chart-box" id="tempBox"><canvas id="tempChart"></canvas></div>
+    <div class="chart-box" id="dewBox" hidden><canvas id="dewChart"></canvas></div>
   </div>
   <div class="card chart-card">
     <div class="label">湿度（10分ごとの平均）</div>
@@ -279,7 +294,11 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 const fmt = (d) => d.toLocaleDateString("sv-SE");   // YYYY-MM-DD
 // 今表示している日（最初は今日）
 let day = fmt(new Date());
-let tempChart, humChart;
+let tempChart, humChart, dewChart;
+// 3つのグラフ全部（拡大・移動を一緒にするため）と、上の段に今出しているグラフ（温度か露点温度）
+const allCharts = () => [tempChart, humChart, dewChart];
+let topMode = "temp";
+const topChart = () => (topMode === "dew" ? dewChart : tempChart);
 
 // 0:00〜23:50 の10分刻みの軸（記録がない時間は空白にする）
 const slots = [];
@@ -375,6 +394,31 @@ function buildCharts() {
     ] },
     options: lineOpts("%"),
   });
+  // 露点温度のグラフ（温度と湿度から計算。上の段で「露点温度」を押したときに出す）
+  dewChart = new Chart($("dewChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      // [0] SHT31 の露点温度
+      { label: "露点温度", data: [], borderColor: temp, backgroundColor: temp, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2.5 },
+      // [1] 比較用センサー THD-R-C の露点温度（記録がある日だけ出す）
+      { label: "THD-R-C", data: [], borderColor: css("--cmp"), backgroundColor: css("--cmp"),
+        pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
+    ] },
+    options: lineOpts("℃"),
+  });
+}
+
+// 上の段のグラフを「温度」（mode = "temp"）か「露点温度」（"dew"）に切り替える
+const TOP_LABELS = { temp: "温度（10分ごとの平均、薄い帯は最高〜最低）",
+                     dew: "露点温度（10分ごとの平均。温度と湿度から計算した、結露しはじめる温度）" };
+function setTop(mode) {
+  topMode = mode;
+  $("tempBox").hidden = mode !== "temp";
+  $("dewBox").hidden = mode !== "dew";
+  $("topLabel").textContent = TOP_LABELS[mode];
+  document.querySelectorAll("[data-top]").forEach((b) => b.classList.toggle("on", b.dataset.top === mode));
+  topChart().resize();      // 隠れていたグラフは大きさが決まっていないので、出したときに合わせる
+  try { localStorage.setItem("temp-monitor-top", mode); } catch (e) { /* 覚えられなくても動く */ }
 }
 
 // ラズパイが10分ごとに data/ 以下のJSONを更新する。キャッシュを避けるため時刻を付けて読む
@@ -405,6 +449,9 @@ function showLatest(l, isLive) {
 
 // 露点温度[℃]（空気が冷えて結露しはじめる温度）を、温度 t[℃] と湿度 h[%] から計算する（マグヌスの式）
 // 湿度がないセンサー（Pt100・K型熱電対）や、測れていないときは null
+// 小数1桁に丸める（null はそのまま）
+const round1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
+
 function dewPoint(t, h) {
   if (t == null || h == null || h <= 0) return null;
   const a = 17.62, b = 243.12;                  // 水の上の空気で使う定数（-45〜60℃ で使える）
@@ -455,6 +502,14 @@ function showCompareLines(cmp) {
   t[9].hidden = !ktc.has;
   t[2].label = thd.has || pt.has || ktc.has ? "SHT31" : "温度";
   h[0].label = thd.has ? "SHT31" : "湿度";
+  // 露点温度: THD-R-C（湿度も測る）だけ。前の形のデータで dew がなければ、平均の温度・湿度から計算する
+  const dw = dewChart.data.datasets;
+  dw[1].data = (() => {
+    const byTime = Object.fromEntries((cmp.thdrc || []).map((p) => [p.time, p]));
+    return slots.map((s) => (byTime[s] ? byTime[s].dew ?? round1(dewPoint(byTime[s].temp, byTime[s].hum)) : null));
+  })();
+  dw[1].hidden = !dw[1].data.some((v) => v != null);
+  dw[0].label = dw[1].hidden ? "露点温度" : "SHT31";
 }
 
 // 湿度の状態（高湿注意・高湿警報）を、湿度の数字の下に出す。正常なら出さない
@@ -520,14 +575,15 @@ async function load() {
     ds[3 + i].data = slots.map(() => th[k] ?? null);
   });
   humChart.data.datasets[0].data = pick("hum");
+  // 露点温度（前の形のデータで dew がなければ、10分の平均の温度・湿度から計算する）
+  dewChart.data.datasets[0].data = slots.map((s) => (byTime[s] ? byTime[s].dew ?? round1(dewPoint(byTime[s].temp, byTime[s].hum)) : null));
   humChart.data.datasets[1].data = slots.map(() => th.hum_alarm ?? null);
   humChart.data.datasets[2].data = slots.map(() => th.hum_warn ?? null);
   // 湿度の警報を使わない設定のときは、凡例にも出さない
   humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
   showCompareLines(CMP_POINTS);
   showImported();
-  tempChart.update();
-  humChart.update();
+  for (const c of allCharts()) c.update();
 
   // 記録がない日は「この日の記録はありません」を出し、CSVのリンクを隠す（取り込んだ記録があれば出さない）
   $("empty").hidden = d.points.length > 0 || importedOnDay(day);
@@ -616,7 +672,36 @@ function importedOnDay(d) {
 
 // 取り込んだ列を、表示している日の10分ごとの平均にしてグラフに入れる（前に入れた線は入れ直す）
 function showImported() {
-  for (const c of [tempChart, humChart]) c.data.datasets = c.data.datasets.filter((ds) => !ds.imported);
+  for (const c of allCharts()) c.data.datasets = c.data.datasets.filter((ds) => !ds.imported);
+  // 10分の枠ごとの平均（[[日時, 値], ...] → グラフの0:00〜23:50の並び）。表示している日の分だけ
+  const average10 = (rows) => {
+    const buckets = {};     // 10分の枠の番号 → その枠の値
+    for (const [ts, v] of rows) {
+      if (fmt(ts) !== day) continue;
+      const k = Math.floor((ts.getHours() * 60 + ts.getMinutes()) / 10);
+      (buckets[k] = buckets[k] || []).push(v);
+    }
+    return slots.map((_, k) => buckets[k]
+      ? Math.round(buckets[k].reduce((a, b) => a + b, 0) / buckets[k].length * 10) / 10 : null);
+  };
+  // 同じ機器の「温度」と「湿度」の線がそろっていれば、同じ時刻どうしで露点温度を計算して露点温度のグラフに出す
+  // （例: 「GR-3500 温度」と「GR-3500 湿度」→「GR-3500 露点温度」。色は温度の線と同じ）
+  imported.forEach((col, i) => {
+    if (col.unit !== "℃") return;
+    const name = col.label.replace(/ 温度(\(\d+\))?$/, "");
+    const humCol = imported.find((x) => x.unit === "%" && x.label.replace(/ 湿度(\(\d+\))?$/, "") === name);
+    if (!humCol || name === col.label) return;
+    const humAt = new Map(humCol.rows.map(([ts, v]) => [ts.getTime(), v]));
+    const rows = [];
+    for (const [ts, t] of col.rows) {
+      const d = dewPoint(t, humAt.get(ts.getTime()));
+      if (d != null) rows.push([ts, d]);
+    }
+    const color = IMPORT_COLORS[i % IMPORT_COLORS.length];
+    dewChart.data.datasets.push({
+      label: `${name} 露点温度`, data: average10(rows), borderColor: color, backgroundColor: color,
+      pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, imported: true });
+  });
   imported.forEach((col, i) => {
     const buckets = {};     // 10分の枠の番号 → その枠の値
     for (const [ts, v] of col.rows) {
@@ -632,7 +717,9 @@ function showImported() {
       pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, imported: true });
   });
   // 取り込んだ線があるときは、ラズパイの線の名前を「SHT31」にして見分けやすくする
-  if (imported.length) tempChart.data.datasets[2].label = humChart.data.datasets[0].label = "SHT31";
+  if (imported.length) {
+    tempChart.data.datasets[2].label = humChart.data.datasets[0].label = dewChart.data.datasets[0].label = "SHT31";
+  }
 }
 
 // 取り込んだ記録の窓口（ラズパイ）
@@ -760,14 +847,13 @@ $("importClear").onclick = async () => {
 // 片方のグラフを拡大・移動したら、もう片方も同じ範囲にする
 function syncRange(src) {
   const { min, max } = src.scales.x;
-  for (const c of [tempChart, humChart]) if (c !== src) c.zoomScale("x", { min, max }, "none");
+  for (const c of allCharts()) if (c !== src) c.zoomScale("x", { min, max }, "none");
 }
 
 // ボタン: 最後の記録を右端にして、h 時間分を表示する（24 なら全体に戻す）
 function showHours(h) {
   if (h >= 24) {
-    tempChart.resetZoom("none");
-    humChart.resetZoom("none");
+    for (const c of allCharts()) c.resetZoom("none");
     return;
   }
   const temps = tempChart.data.datasets[2].data;
@@ -775,15 +861,15 @@ function showHours(h) {
   while (last > 0 && temps[last] == null) last--;      // 最後の記録の位置
   const n = h * 6;                                     // h 時間 = 6 × h マス
   const max = Math.max(last, n);
-  for (const c of [tempChart, humChart]) c.zoomScale("x", { min: max - n, max }, "none");
+  for (const c of allCharts()) c.zoomScale("x", { min: max - n, max }, "none");
 }
 // ボタン: 表示している範囲を、幅の半分だけ前（dir = -1）か次（dir = 1）へ動かす
 function moveRange(dir) {
-  const { min, max } = tempChart.scales.x;
+  const { min, max } = topChart().scales.x;
   const width = max - min;
   const step = Math.max(1, Math.round(width / 2));
   const newMin = Math.min(Math.max(min + dir * step, 0), slots.length - 1 - width);
-  for (const c of [tempChart, humChart]) c.zoomScale("x", { min: newMin, max: newMin + width }, "none");
+  for (const c of allCharts()) c.zoomScale("x", { min: newMin, max: newMin + width }, "none");
 }
 document.querySelectorAll(".zoombar button").forEach((b) => {
   b.onclick = () => b.dataset.move ? moveRange(Number(b.dataset.move)) : showHours(Number(b.dataset.hours));
@@ -792,11 +878,12 @@ $("zoomHint").textContent = isTouch
   ? "2本指で拡大・1本指で左右に移動"
   : "ドラッグで範囲を選んで拡大・Shift＋ドラッグで移動・Ctrl＋ホイールで拡大縮小";
 
-// ボタン: 温度と湿度のグラフを1枚の画像（PNG）にまとめて保存する（拡大しているときは、見えている範囲）
+// ボタン: 上の段（温度か露点温度の、今出している方）と湿度のグラフを1枚の画像（PNG）にまとめて保存する
+// （拡大しているときは、見えている範囲）
 function saveGraph() {
   const r = window.devicePixelRatio || 1;       // 画面の細かさ（グラフはこの倍率で描かれている）
   const pad = 20 * r, font = getComputedStyle(document.body).fontFamily;
-  const charts = [tempChart, humChart];
+  const charts = [topChart(), humChart];
   // マウスを乗せたときの吹き出しは画像に入れない
   for (const c of charts) {
     c.setActiveElements([]);
@@ -1017,6 +1104,11 @@ $("addForm").onsubmit = async (e) => {
 
 // ---- ページを開いたときに始まる処理 ----
 buildCharts();
+// 温度・露点温度の切り替えボタン（前に選んだ方を覚えておく）
+document.querySelectorAll("[data-top]").forEach((b) => { b.onclick = () => setTop(b.dataset.top); });
+let savedTop = "temp";
+try { savedTop = localStorage.getItem("temp-monitor-top") === "dew" ? "dew" : "temp"; } catch (e) { /* 使えなければ温度 */ }
+setTop(savedTop);
 loadImported();                          // 取り込んだCSVの記録があれば、グラフに出す
 setInterval(loadImported, 10 * 60 * 1000);   // 取り込んだ記録は10分ごとに読み直す（ほかの人が取り込んだとき用）
 setInterval(load, 60 * 1000);   // グラフは1分ごとに読み直す

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""今日のCSVを読み、10分ごとの温度・湿度グラフをPNGで保存する。"""
+"""今日のCSVを読み、10分ごとの温度・湿度・露点温度のグラフをPNGで保存する。"""
 # ============================================================
 # このプログラムの役割
 #   今日の記録（CSV）から、10分ごとの温度・湿度のグラフ画像（PNG）を作る。
@@ -68,16 +68,20 @@ def every_10min(rows):
         # 時刻を10分単位に切り捨てる（例: 10:37 → 10:30）。同じ箱に入れる
         key = ts.replace(minute=ts.minute - ts.minute % STEP_MIN, second=0)
         buckets.setdefault(key, []).append((t, h))
-    # 箱ごとに平均を計算する
+    # 箱ごとに平均を計算する（露点温度は1分ごとの温度・湿度から計算してから平均する）
     times = sorted(buckets)
     temps = [sum(v[0] for v in buckets[k]) / len(buckets[k]) for k in times]
     hums = [sum(v[1] for v in buckets[k]) / len(buckets[k]) for k in times]
-    return times, temps, hums
+    dews = []
+    for k in times:
+        ds = [d for d in (alarm_settings.dew_point(t, h) for t, h in buckets[k]) if d is not None]
+        dews.append(sum(ds) / len(ds) if ds else float("nan"))
+    return times, temps, hums, dews
 
 
-def draw(times, temps, hums, day, out_paths):
-    # 上下2段のグラフを作る（上: 温度、下: 湿度。横軸の時刻は共通）
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+def draw(times, temps, hums, dews, day, out_paths):
+    # 3段のグラフを作る（上: 温度、中: 湿度、下: 露点温度。横軸の時刻は共通）
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
     fig.suptitle(f"温湿度 {day:%Y-%m-%d}（{STEP_MIN}分ごと）　更新 {datetime.now():%H:%M}",
                  fontsize=16)
 
@@ -108,10 +112,18 @@ def draw(times, temps, hums, day, out_paths):
     ax2.annotate(f"{hums[-1]:.1f}%", (times[-1], hums[-1]),
                  textcoords="offset points", xytext=(8, 0), fontsize=14, color="tab:blue")
 
+    # ---- 下段: 露点温度（温度と湿度から計算。空気が冷えて結露しはじめる温度）----
+    ax3.plot(times, dews, marker="o", markersize=3, color="tab:green")
+    ax3.set_ylabel("露点温度 (℃)")
+    ax3.grid(alpha=0.3)
+    if dews[-1] == dews[-1]:    # 最後の値が計算できたときだけ（nan は自分と等しくならない）
+        ax3.annotate(f"{dews[-1]:.1f}℃", (times[-1], dews[-1]),
+                     textcoords="offset points", xytext=(8, 0), fontsize=14, color="tab:green")
+
     # 横軸は 0:00〜23:59 の1日分、目盛りは2時間ごと
-    ax2.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax2.set_xlim(day.replace(hour=0, minute=0), day.replace(hour=23, minute=59))
-    ax2.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+    ax3.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax3.set_xlim(day.replace(hour=0, minute=0), day.replace(hour=23, minute=59))
+    ax3.xaxis.set_major_locator(mdates.HourLocator(interval=2))
 
     # 画像として保存する（out_paths の全部に）
     fig.tight_layout()

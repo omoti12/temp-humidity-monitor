@@ -247,18 +247,48 @@ class SensorWatch:
 # 保存（CSVと現在値）
 # ============================================================
 
+CSV_HEADER = ["日時", "温度(℃)", "湿度(%)", "状態", "露点温度(℃)"]
+
+
+def add_dew_column(path):
+    """露点温度の列がない前の形のCSV（その日の途中で新しい版に替えたとき）に、列を足して書き直す。
+    今までの行の露点温度は、その行の温度・湿度から計算して入れる"""
+    with open(path, encoding="utf-8") as f:
+        if f.readline().rstrip("\r\n").split(",") == CSV_HEADER:
+            return      # もう新しい形（ふだんはここで終わる。1行目だけ読む）
+        f.seek(0)
+        lines = [line.replace("\0", "") for line in f]     # 停電などで入った「\0」は消す
+    rows = []
+    for r in csv.DictReader(lines):
+        try:
+            d = alarm_settings.dew_point(float(r["温度(℃)"]), float(r["湿度(%)"]))
+        except (KeyError, TypeError, ValueError):
+            continue    # 壊れた行は飛ばす
+        rows.append([r["日時"], r["温度(℃)"], r["湿度(%)"], r.get("状態") or "", f"{d:.1f}" if d is not None else ""])
+    with open(path + ".tmp", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(CSV_HEADER)
+        w.writerows(rows)
+    os.replace(path + ".tmp", path)
+    print(f"CSVに露点温度の列を足しました: {path}", flush=True)
+
+
 def append_csv(now, t, h, st):
     # その日のCSVファイルに1行追記する（例: /home/iot-user/templog/2026-10-19.csv）
     os.makedirs(LOG_DIR, exist_ok=True)
     path = os.path.join(LOG_DIR, now.strftime("%Y-%m-%d") + ".csv")
     new = not os.path.exists(path)
+    if not new:
+        add_dew_column(path)    # 前の形（露点温度の列なし）なら、列を足しておく
+    d = alarm_settings.dew_point(t, h)
     # "a" は追記モード。Excelで開ける形式（UTF-8）で書く
     with open(path, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if new:
             # その日の最初の1行目には見出しを書く
-            w.writerow(["日時", "温度(℃)", "湿度(%)", "状態"])
-        w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), f"{t:.1f}", f"{h:.1f}", st])
+            w.writerow(CSV_HEADER)
+        w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), f"{t:.1f}", f"{h:.1f}", st,
+                    f"{d:.1f}" if d is not None else ""])
 
 
 def write_now(now, t, h, st, hst="正常"):

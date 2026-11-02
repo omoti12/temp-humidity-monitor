@@ -79,7 +79,7 @@ def load(path):
 
 
 def every_10min(rows):
-    """1分ごとの記録を10分単位にまとめ、平均・最高・最低を出す。"""
+    """1分ごとの記録を10分単位にまとめ、平均・最高・最低を出す（露点温度は平均）。"""
     buckets = {}
     for ts, t, h, _ in rows:
         # 時刻を10分単位に切り捨てる（例: 10:37 → 10:30）。同じ箱に入れる
@@ -89,15 +89,30 @@ def every_10min(rows):
     for k in sorted(buckets):
         ts = [v[0] for v in buckets[k]]
         hs = [v[1] for v in buckets[k]]
-        # グラフ1点分のデータ（温度は平均・最高・最低、湿度は平均）
+        # 露点温度は1分ごとの温度・湿度から計算してから平均する
+        ds = [d for d in (alarm_settings.dew_point(t, h) for t, h in buckets[k]) if d is not None]
+        # グラフ1点分のデータ（温度は平均・最高・最低、湿度・露点温度は平均）
         out.append({
             "time": k.strftime("%H:%M"),
             "temp": round(sum(ts) / len(ts), 1),
             "temp_max": max(ts),
             "temp_min": min(ts),
             "hum": round(sum(hs) / len(hs), 1),
+            "dew": round(sum(ds) / len(ds), 1) if ds else None,
         })
     return out
+
+
+DATA_VERSION = 2       # 日ごとのデータの形の版（2: 露点温度 dew を追加）。上げると全部の日を作り直す
+
+
+def is_current(path):
+    """その日のデータ（JSON）が今の形（DATA_VERSION）で作られているか"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("v") == DATA_VERSION
+    except (OSError, ValueError):
+        return False
 
 
 def write_json(path, obj):
@@ -132,10 +147,10 @@ def build():
         d = datetime.strptime(day, "%Y-%m-%d")
         cmp_srcs = [compare_data.csv_path(name, d) for name in compare_data.SENSORS]
         changed = max([os.path.getmtime(src)] + [os.path.getmtime(c) for c in cmp_srcs if os.path.exists(c)])
-        if os.path.exists(out) and os.path.getmtime(out) >= changed:
+        if os.path.exists(out) and os.path.getmtime(out) >= changed and is_current(out):
             continue
         rows = load(src)
-        write_json(out, {"day": day, "points": every_10min(rows),
+        write_json(out, {"day": day, "v": DATA_VERSION, "points": every_10min(rows),
                          **{name + "_points": pts for name, pts in compare_data.all_points(d).items()}})
         shutil.copyfile(src, os.path.join(data_dir, day + ".csv"))
 

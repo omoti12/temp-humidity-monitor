@@ -12,6 +12,7 @@
 #   sht31_logger.py（警報の判定とメール）、sht31_graph.py・web/app.py・pages/publish.py（グラフの線）
 # ============================================================
 import json
+import math
 import os
 import threading
 import time
@@ -238,3 +239,13 @@ def calibrate(name, t, h, s=None):
     if h is not None:
         h = min(100.0, max(0.0, h + s.get(f"cal_{name}_hum", 0.0)))
     return t, h
+
+
+def dew_point(t, h):
+    """露点温度[℃]（空気が冷えて結露しはじめる温度）を、温度 t[℃] と湿度 h[%] から計算する（マグヌスの式）。
+    17.62 と 243.12 は水の上の空気で使う定数（-45〜60℃ で使える）。測れなかった値・湿度0%以下なら None"""
+    if t is None or h is None or h <= 0:
+        return None
+    a, b = 17.62, 243.12
+    g = math.log(h / 100) + a * t / (b + t)
+    return b * g / (a - g)
