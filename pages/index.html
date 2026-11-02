@@ -48,6 +48,7 @@
   /* 設置場所の名前（登録されているときだけ、見出しの横に出す） */
   h1 .place { margin-left: .6em; color: var(--temp); }
   .updated { color: var(--muted); font-size: .85rem; }
+  .howto { display: inline-block; margin-top: 4px; font-size: .85rem; color: var(--hum); }
   /* ---- 上の3つのカード（現在の温度・湿度・状態）---- */
   .now { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
@@ -129,6 +130,8 @@
     <h1>温湿度モニター<span class="place" id="place"></span></h1>
     <span class="updated" id="updated"></span>
   </header>
+  <!-- 各センサーの測り方・つなぎ方の説明ページ -->
+  <a class="howto" href="system.html">測り方・仕組み</a>
 
   <!-- 現在の温度・湿度・状態（中身は下の showLatest() が書き込む） -->
   <section class="now">
@@ -525,7 +528,7 @@ async function load() {
 //   温度の列は温度のグラフ、湿度の列は湿度のグラフに出す
 //   線の名前は「機器名 温度」（例: GR-3500 温度）。機器名はCSVの「機器名」の行、なければファイル名から取る
 //   読める形
-//     ・GRAPHTEC の記録計（GR-3500 など）のCSV（「波形名」「単位」の行から列の名前と単位を読む）
+//     ・記録計 GR-3500 などのCSV（「波形名」「単位」の行から列の名前と単位を読む）
 //     ・1列目が日時、2列目からが数値のCSV（1行目が見出し。このサイトのCSVダウンロードの形も読める）
 // ============================================================
 let imported = [];      // 取り込んだ列 [{ label: 線の名前, unit: "℃" か "%", rows: [[日時, 値], ...] }, ...]

@@ -51,6 +51,7 @@ STEP_MIN = 10          # グラフの間隔（分）
 
 SITE_FILES = {         # 公開するファイル: 公開先の名前 → このリポジトリ内の元ファイル
     "index.html": "pages/index.html",
+    "system.html": "pages/system.html",     # 測り方と仕組みの説明ページ
     "chart.umd.js": "web/static/chart.umd.js",
     "chart.js-LICENSE.md": "web/static/chart.js-LICENSE.md",
     "hammer.min.js": "web/static/hammer.min.js",

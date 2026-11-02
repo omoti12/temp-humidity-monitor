@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>測り方と仕組み｜温湿度モニター</title>
+<!--
+  ============================================================
+  このページの役割
+    各センサーが「何を・どうつないで・どこで何に変換して」サイトの数字になっているかをまとめた説明ページ。
+    公開サイト（index.html）の「測り方・仕組み」から開く。中身は固定の文章（データは読まない）
+    配線や設定を変えたら、このページも書き直す
+  ============================================================
+-->
+<style>
+  /* ---- 色の設定（index.html と同じ色）---- */
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
+    --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c;
+    --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e; --gr: #ae3ec9; --code: #f1f3f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
+      --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b;
+      --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a; --gr: #e599f7; --code: #262a33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.7;
+         font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans CJK JP", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  h2 { font-size: 1.1rem; margin: 32px 0 10px; padding-left: 10px; border-left: 4px solid var(--temp); }
+  h3 { font-size: 1rem; margin: 0 0 6px; }
+  a { color: var(--hum); }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  /* 目次 */
+  .toc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .9rem; }
+  /* センサーごとの色の印 */
+  .tag { display: inline-block; font-size: .75rem; font-weight: 700; padding: 1px 8px; border-radius: 99px;
+         border: 1px solid currentColor; margin-left: 6px; vertical-align: 2px; }
+  .sht { color: var(--temp); } .thd { color: var(--cmp); } .pt { color: var(--pt); }
+  .ktc { color: var(--ktc); } .gr { color: var(--gr); }
+  /* 測ってから数字になるまでの流れ（左から右へ。狭い画面では上から下へ） */
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 10px 0 4px; overflow: hidden; }
+  .step { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+          padding: 8px 10px; font-size: .85rem; line-height: 1.5; }
+  .step b { display: block; font-size: .9rem; }
+  .step .v { display: block; margin-top: 4px; font-weight: 700; color: var(--warn); font-variant-numeric: tabular-nums; }
+  .arrow { flex: none; align-self: center; width: 22px; text-align: center; color: var(--muted); }
+  .arrow::before { content: "→"; }
+  @media (max-width: 700px) {
+    .flow { flex-direction: column; }
+    .arrow { width: auto; }
+    .arrow::before { content: "↓"; }
+  }
+  /* 表 */
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; }
+  code, .formula { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .85rem;
+                   background: var(--code); border-radius: 6px; padding: 1px 6px; }
+  .formula { display: block; padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  ul { margin: 6px 0; padding-left: 1.3em; }
+  li { margin: 2px 0; }
+  /* 確認がまだのところ */
+  .check { color: var(--warn); font-weight: 700; font-size: .8rem; }
+  footer { margin: 32px 0 16px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>測り方と仕組み</h1>
+    <a href="./">← 温湿度モニターに戻る</a>
+  </header>
+  <p class="muted">各センサーが、何をどうつないで、どこで何に変換されて、サイトの数字になっているかのまとめ。
+    <span class="check">［要確認］</span> は、まだ説明書や現物で確かめていないところ。</p>
+
+  <nav class="card toc">
+    <a href="#overview">全体の流れ</a>
+    <a href="#sht31">SHT31</a>
+    <a href="#pt100">Pt100</a>
+    <a href="#ktc">K型熱電対</a>
+    <a href="#thdrc">THD-R-C</a>
+    <a href="#gr3500">GR-3500（CSV取り込み）</a>
+    <a href="#power">電圧・電流のまとめ</a>
+    <a href="#pi">ラズパイの中の処理</a>
+    <a href="#site">サイトに出るまで</a>
+  </nav>
+
+  <!-- ============================================================ -->
+  <h2 id="overview">全体の流れ</h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>センサー</b>温度・湿度を、電気の量（抵抗・電圧・電流）やデジタルの数字に変える</div>
+      <div class="arrow"></div>
+      <div class="step"><b>変換器</b>電気の量を読み取り、ラズパイが読める形（デジタル）にする</div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>℃・% に計算 → 補正を足す → SDカードに1分ごとに記録</div>
+      <div class="arrow"></div>
+      <div class="step"><b>サイト</b>現在値は5秒ごと、グラフは10分ごとに更新</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>センサー</th><th>測るもの</th><th>センサーが出すもの</th><th>変換器・つなぎ方</th><th>役割</th></tr>
+        <tr><td><span class="tag sht">SHT31</span></td><td>温度・湿度</td><td>デジタルの数字（I2C）</td><td>ラズパイに直接（線4本）</td><td>メインのセンサー。警報メールの判定に使う</td></tr>
+        <tr><td><span class="tag pt">Pt100</span></td><td>温度</td><td>抵抗（0℃で100Ω）</td><td>Y2Kb の Pt100 モジュール → USB</td><td>比較用</td></tr>
+        <tr><td><span class="tag ktc">K型熱電対</span></td><td>温度</td><td>ごく小さい電圧（1℃で約0.04mV）</td><td>Y2Kb の K型熱電対モジュール → USB</td><td>比較用</td></tr>
+        <tr><td><span class="tag thd">THD-R-C</span></td><td>温度・湿度</td><td>電流 4〜20mA</td><td>150Ωの抵抗 → RPi-GP40T（電圧を測る基板）</td><td>比較用（つないでいるときだけ）</td></tr>
+        <tr><td><span class="tag gr">GR-3500</span></td><td>温度・湿度</td><td>Pt100 の抵抗・湿度計の電流</td><td>記録計 GR-3500（ラズパイにはつながない）</td><td>別の記録計。CSVをサイトに取り込んで比べる</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="sht31">SHT31（温湿度センサー）<span class="tag sht">メイン</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>SHT31 の中</b>温度と湿度を測り、センサーの中で 0〜65535 の数字に変換<span class="v">デジタル 16ビット</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>I2C（線4本）</b>ラズパイが「測って」と命令し、数字を受け取る<span class="v">3.3V の信号</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>数字を ℃・% に計算し、壊れていないか確認（CRC）<span class="v">5秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>記録</b>補正を足して、1分ごとにSDカードへ。警報の判定もここ<span class="v">1分ごと</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>センサー：Adafruit SHT31-D（基板の上に SHT31 が載ったもの）</li>
+      <li>ラズパイの I2C：SDA = GPIO2（3番ピン）、SCL = GPIO3（5番ピン）、GND、電源（VIN）の4本</li>
+      <li>電源：ラズパイから供給（SHT31-D は 2.5〜5.5V で動く）。3.3V と 5V のどちらのピンにつないでいるか <span class="check">［要確認］</span></li>
+      <li>ADDR ピンを VIN につないで、I2C の番号（アドレス）を <code>0x45</code> にしている</li>
+    </ul>
+    <h3>数字の計算（データシートの式）</h3>
+    <span class="formula">温度[℃] = -45 + 175 × 温度の数字 ÷ 65535
+湿度[%] = 100 × 湿度の数字 ÷ 65535</span>
+    <ul>
+      <li>例：温度の数字が 26214 なら -45 + 175 × 26214 ÷ 65535 = 25.0℃</li>
+      <li>測るたびに「高精度・1回測定」の命令を送る。読み間違いは CRC（検査用の数字）で見つけて捨てる</li>
+      <li>管理欄の「補正」の数を足してから記録・判定する（例：-0.5 なら 0.5℃ 下げる）</li>
+      <li>SDカードの記録は、その1分の区切りで測った値（平均ではない）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="pt100">Pt100（白金測温抵抗体）<span class="tag pt">比較用</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>Pt100</b>白金の線。温度で抵抗が変わる<span class="v">0℃で100Ω、1℃で約0.385Ω増える</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>Y2Kb Pt100 モジュール</b>小さい一定の電流を流して電圧を測り、抵抗 → 温度に変換<span class="v">温度の文字にして送る</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>USB</b>USBシリアル（CH341）で文字を送る<span class="v">10秒ごと・921600bps</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>「現在,平均,最大,最小」の行から現在の温度を取り出し、補正を足して記録<span class="v">1分ごと</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>Pt100 の線 → Y2Kb の Pt100 温度測定モジュール → USB ケーブル → ラズパイ</li>
+      <li>モジュールの電源は USB から（5V）</li>
+      <li>差し込み口：ラズパイの <b>hcd.0</b> 側（最初から差していた方）。K型熱電対と逆に差すと名前が入れ替わる</li>
+      <li>USB ケーブルはデータ通信できるものが必要（充電専用だとランプは点くが認識されない）</li>
+    </ul>
+    <h3>数字の考え方</h3>
+    <span class="formula">抵抗[Ω] ≒ 100 × (1 + 0.00385 × 温度[℃])   （JIS / IEC の Pt100）
+例：25℃ → 約109.6Ω、0℃ → 100Ω</span>
+    <ul>
+      <li>温度への変換はモジュールの中で行い、ラズパイは送られてきた温度の文字をそのまま使う</li>
+      <li>-50〜200℃ を外れた値は、断線などの疑いとして記録しない</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="ktc">K型熱電対<span class="tag ktc">比較用</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>K型熱電対</b>2種類の金属（クロメル・アルメル）の先端の温度差で電圧が出る<span class="v">1℃の差で約0.041mV</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>Y2Kb K型熱電対モジュール</b>ごく小さい電圧を測り、つなぎ目側の温度（冷接点）を足して温度に変換<span class="v">温度の文字にして送る</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>USB</b>Pt100 と同じ形で文字を送る<span class="v">10秒ごと・921600bps</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>Pt100 と同じプログラムを「ktc」の名前で動かして記録<span class="v">1分ごと</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>K型熱電対 → Y2Kb の K型熱電対モジュール → USB ケーブル → ラズパイ</li>
+      <li>モジュールの電源は USB から（5V）</li>
+      <li>差し込み口：ラズパイの <b>hcd.1</b> 側（あとから差した方）</li>
+    </ul>
+    <h3>数字の考え方</h3>
+    <span class="formula">出る電圧 ≒ 0.041mV × (先端の温度 − つなぎ目の温度)
+例：先端 25℃・つなぎ目 20℃ → 約0.2mV。モジュールがつなぎ目の温度を測って足し、先端の温度を出す</span>
+    <ul>
+      <li>電圧がとても小さいので、線を長くしたり、ノイズの多い電線の近くを通したりすると値がふらつきやすい</li>
+      <li>-200〜1300℃ を外れた値は、断線などの疑いとして記録しない</li>
+      <li>指で先端をつまむとすぐ温度が上がる（どちらのモジュールか確かめるときに使える）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="thdrc">THD-R-C（4〜20mA 温湿度センサー）<span class="tag thd">比較用</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>THD-R-C</b>温度・湿度を電流で出す（2本）<span class="v">4〜20mA</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>150Ω の抵抗</b>電流を電圧に変える<span class="v">0.6〜3.0V</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>RPi-GP40T</b>電圧を 0〜4095 の数字に変える（1目盛り 1.25mV）<span class="v">SPI でラズパイへ</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>電圧 → 電流 → ℃・% に計算し、補正を足して記録<span class="v">5秒ごと（記録は1分ごと）</span></div>
+    </div>
+    <h3>つなぎ方</h3>
+    <ul>
+      <li>温度：THD-R-C の A → GP40T の A0。A0 と G0 のあいだに 150Ω</li>
+      <li>湿度：THD-R-C の B → GP40T の A1。A1 と G1 のあいだに 150Ω</li>
+      <li>G0・G1 は THD-R-C の電源の −（GND）へ</li>
+      <li>THD-R-C の電源：専用の直流電源 <span class="check">［要確認：電圧（説明書の値）］</span></li>
+      <li>GP40T はラズパイの上に載せる基板。ラズパイとは電気的に分けた（絶縁した）電源で動く（GPIO27 で電源を入れる）</li>
+    </ul>
+    <h3>数字の計算</h3>
+    <span class="formula">電圧[V] = GP40T の数字 × 1.25mV
+電流[mA] = 電圧[V] ÷ 150Ω × 1000
+温度[℃] = -19.9 + (電流 − 4) ÷ 16 × 79.9   （4mA = -19.9℃、20mA = 60.0℃）
+湿度[%]  = (電流 − 4) ÷ 16 × 99.9          （4mA = 0%、20mA = 99.9%）</span>
+    <ul>
+      <li>例：温度側が 1.32V → 8.8mA → -19.9 + 4.8 ÷ 16 × 79.9 = 4.1℃</li>
+      <li>3.6〜20.5mA を外れたら、断線・故障の疑いとして記録しない</li>
+      <li>GP40T は 0〜5V のレンジで使う（実際は 0〜5.12V まで測れる）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="gr3500">GR-3500（別の記録計・CSVで取り込み）<span class="tag gr">比較用</span></h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">ラズパイにはつながっていない別の記録計。記録計が1分ごとに記録したCSVを、サイトの「CSVを取り込む」で読み込んでグラフに重ねる。</p>
+    <h3>温度（CH03：オンド1）</h3>
+    <div class="flow">
+      <div class="step"><b>Pt100</b>温度で抵抗が変わる<span class="v">0℃で100Ω</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>GR-3500（Pt100 レンジ）</b>記録計が直接抵抗を測り、温度に変換<span class="v">小数1桁</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>記録</b>1分ごとにCSVへ<span class="v">単位 ℃</span></div>
+    </div>
+    <h3>湿度（CH06：シツド1）</h3>
+    <div class="flow">
+      <div class="step"><b>湿度センサー</b>湿度を電流で出す<span class="v">4〜20mA</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>500Ω の抵抗</b>電流を電圧に変える<span class="v">2〜10V</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>GR-3500（±10V レンジ）</b>電圧を測り、記録計の「スケーリング」で % に直す<span class="v">2V = 0%、10V = 100%</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>記録</b>1分ごとにCSVへ<span class="v">単位 RH</span></div>
+    </div>
+    <span class="formula">電圧[V] = 電流[mA] × 500Ω ÷ 1000   （4mA → 2V、20mA → 10V）
+湿度[%] = (電圧 − 2) ÷ 8 × 100       （記録計のスケーリング：計測値 2〜10 → 表示値 0〜100）</span>
+    <ul>
+      <li>湿度センサーの機種 <span class="check">［要確認］</span></li>
+      <li>電源を入れた直後の数分は、湿度が100%を超えることがある（10/30 15:27 に 112.5% など）</li>
+      <li>CSVは1行目に「機器名」があり、線の名前は「GR-3500 温度」「GR-3500 湿度」になる</li>
+      <li>取り込んだ記録は、取り込んだパソコンのブラウザの中にだけ保存される（ラズパイやインターネットには送らない）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="power">電圧・電流のまとめ</h2>
+  <div class="card table-wrap">
+    <table>
+      <tr><th>場所</th><th>かかっているもの</th><th>大きさ</th><th>メモ</th></tr>
+      <tr><td>ラズパイの電源</td><td>直流電圧</td><td class="num">5V（5A まで）</td><td>ラズパイ5用の 27W アダプタ</td></tr>
+      <tr><td>SHT31 の電源</td><td>直流電圧</td><td class="num">3.3V または 5V</td><td>ラズパイのピンから <span class="check">［要確認］</span></td></tr>
+      <tr><td>SHT31 の通信（I2C）</td><td>信号の電圧</td><td class="num">3.3V</td><td>ラズパイの GPIO は 3.3V（5V をかけると壊れる）</td></tr>
+      <tr><td>USB モジュール（Pt100・K型）</td><td>USB の電源</td><td class="num">5V</td><td>ラズパイの USB 差し込み口から</td></tr>
+      <tr><td>Pt100 の線</td><td>モジュールが流す測定用の電流</td><td class="num">小さい一定の電流</td><td>値はモジュールの説明書 <span class="check">［要確認］</span></td></tr>
+      <tr><td>K型熱電対の線</td><td>温度差で出る電圧</td><td class="num">約0.041mV／℃</td><td>室温どうしなら 1mV もない</td></tr>
+      <tr><td>THD-R-C の出力</td><td>電流</td><td class="num">4〜20mA</td><td>温度・湿度で2本</td></tr>
+      <tr><td>THD-R-C 側の 150Ω</td><td>抵抗の両端の電圧</td><td class="num">0.6〜3.0V</td><td>GP40T で測る</td></tr>
+      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">―</td><td><span class="check">［要確認］</span></td></tr>
+      <tr><td>GR-3500 の湿度センサーの出力</td><td>電流</td><td class="num">4〜20mA</td><td></td></tr>
+      <tr><td>GR-3500 側の 500Ω</td><td>抵抗の両端の電圧</td><td class="num">2〜10V</td><td>GR-3500 の ±10V レンジで測る</td></tr>
+    </table>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="pi">ラズパイの中の処理</h2>
+  <div class="card table-wrap">
+    <table>
+      <tr><th>プログラム</th><th>やること</th><th>間隔</th><th>書く場所</th></tr>
+      <tr><td>sht31-logger</td><td>SHT31 を測る・記録・警報メール・センサー異常メール</td><td class="num">5秒（記録・判定は1分）</td><td>現在値：メモリ上 / 記録：SDカード <code>templog/日付.csv</code></td></tr>
+      <tr><td>pt100-logger</td><td>Pt100 モジュールの温度を記録</td><td class="num">10秒（記録は1分）</td><td><code>templog/pt100/日付.csv</code></td></tr>
+      <tr><td>ktc-logger</td><td>K型熱電対モジュールの温度を記録</td><td class="num">10秒（記録は1分）</td><td><code>templog/ktc/日付.csv</code></td></tr>
+      <tr><td>thdrc-logger</td><td>THD-R-C を GP40T で読んで記録（つないでいるときだけ）</td><td class="num">5秒（記録は1分）</td><td><code>templog/thdrc/日付.csv</code></td></tr>
+      <tr><td>temp-web</td><td>現在値の窓口（/api/now）と管理の窓口。ラズパイ内のサイト</td><td class="num">頼まれたとき</td><td>―</td></tr>
+      <tr><td>pages-publish</td><td>記録を10分ごとの平均・最高・最低にまとめ、公開サイトへ送る</td><td class="num">10分</td><td>GitHub Pages</td></tr>
+      <tr><td>templog-backup</td><td>記録と1日ごとのグラフ画像を Google ドライブへ</td><td class="num">1時間</td><td>Google ドライブ</td></tr>
+      <tr><td>netcheck</td><td>ネットが切れたら、つなぎ直す・再起動する</td><td class="num">常に見張る</td><td>―</td></tr>
+    </table>
+    <ul>
+      <li>補正（管理欄で設定する、測った値に足す数）は、記録する前に足す。補正を変えても、それまでの記録は変わらない</li>
+      <li>警報（高温・低温・高湿）は SHT31 の値だけで判定する。比較用センサーではメールは送らない</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="site">サイトに出るまで</h2>
+  <div class="card">
+    <h3>現在の値（上のカード・比較の表）</h3>
+    <div class="flow">
+      <div class="step"><b>各ロガー</b>測った値をメモリ上のファイルに書く<span class="v">5〜10秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>temp-web</b>/api/now の窓口で値を返す</div>
+      <div class="arrow"></div>
+      <div class="step"><b>Tailscale Funnel</b>ラズパイの窓口だけをインターネットから読めるようにする</div>
+      <div class="arrow"></div>
+      <div class="step"><b>ブラウザ</b>サイトが直接読みに行く<span class="v">5秒ごと</span></div>
+    </div>
+    <h3>グラフ</h3>
+    <div class="flow">
+      <div class="step"><b>SDカードの記録</b>1分ごとの値</div>
+      <div class="arrow"></div>
+      <div class="step"><b>pages-publish</b>10分ずつまとめて平均・最高・最低を計算<span class="v">10分ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>GitHub Pages</b>公開サイトに置く</div>
+      <div class="arrow"></div>
+      <div class="step"><b>ブラウザ</b>グラフを描く（1分ごとに読み直す）。CSVで取り込んだ線もここで重ねる</div>
+    </div>
+    <ul>
+      <li>グラフの1点は「10分間の平均」。温度の薄い帯は、その10分の最高〜最低</li>
+      <li>SDカードの記録（1分ごと）は「CSVダウンロード」で見られる</li>
+    </ul>
+  </div>
+
+  <footer class="muted">配線・センサー・設定を変えたら、このページも直してください。</footer>
+</main>
+</body>
+</html>
