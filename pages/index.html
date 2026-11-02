@@ -526,7 +526,7 @@ async function load() {
 //     ・GRAPHTEC の記録計（GR-3500 など）のCSV（「波形名」「単位」の行から列の名前と単位を読む）
 //     ・1列目が日時、2列目からが数値のCSV（1行目が見出し。このサイトのCSVダウンロードの形も読める）
 // ============================================================
-let imported = [];      // 取り込んだ列 [{ label: 名前, unit: "℃" か "%", rows: [[日時, 値], ...] }, ...]
+let imported = [];      // 取り込んだ列 [{ label: 線の名前, unit: "℃" か "%", rows: [[日時, 値], ...] }, ...]
 // 取り込んだ線の色（ほかの線と見分けやすい色）
 const IMPORT_COLORS = ["#ae3ec9", "#868e96", "#f59f00", "#a61e4d", "#495057"];
 
@@ -578,8 +578,10 @@ function parseCsv(text, fileName) {
   if (!names.length && header) names = header.slice(1);
   const base = fileName.replace(/\.csv$/i, "");
   return cols.map((rows, i) => {
-    let name = (names[i] || "").replace(/\s+/g, "") || `${base} 列${i + 2}`;
-    return { label: name, unit: guessUnit(name, units[i] || ""), rows };
+    const name = (names[i] || "").replace(/\s+/g, "") || `${base} 列${i + 2}`;
+    const unit = guessUnit(name, units[i] || "");
+    // 線の名前は「CSV取り込み 温度」「CSV取り込み 湿度」にして、取り込んだ線だとわかるようにする
+    return { label: `CSV取り込み ${unit === "%" ? "湿度" : "温度"}`, unit, rows };
   }).filter((col) => col.rows.length > 0);   // 数値のない列（「状態」など）は取り込まない
 }
 
