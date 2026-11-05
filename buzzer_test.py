@@ -58,6 +58,7 @@ def play_kirakira(buzzer):
         time.sleep(0.05)
     time.sleep(BEAT * 2)    # 1回流したら少し休む
 
+
 # 使ってはいけないピン（電源・GND と、ほかの機器が使っているピン）
 NG_PINS = {
     1: "3.3V", 17: "3.3V", 2: "5V", 4: "5V",
@@ -83,7 +84,10 @@ def main():
     print(f"{pin}番ピンのブザーで{'きらきら星を流して' if song else '鳴らして'}います。止めるときは Ctrl+C", flush=True)
     try:
         while True:
-            play_kirakira(buzzer) if song else beep(buzzer)
+            if song:
+                play_kirakira(buzzer)
+            else:
+                beep(buzzer)
     except KeyboardInterrupt:
         pass                        # Ctrl+C が押された
     finally:
