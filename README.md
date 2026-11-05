@@ -42,6 +42,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `sht31_graph.py` | グラフ画像（PNG）の作成 |
 | `thdrc_logger.py` | 比較用センサー THD-R-C（4〜20mA）の記録（RPi-GP40T で読む。使うときだけ） |
 | `pt100_logger.py` | 比較用センサー Pt100・K型熱電対（Y2Kb の USB モジュール）の記録（使うときだけ） |
+| `buzzer_test.py` | ブザーの鳴らし試し（ピン番号を付けて動かす。Ctrl+C で止まる） |
 | `compare_data.py` | 比較用センサー（THD-R-C・Pt100・K型熱電対）の記録をサイト用に読む部品 |
 | `pages/` | GitHub Pages 用のサイト（`system.html` は測り方と仕組みの説明）と公開スクリプト |
 | `web/` | ラズパイ内で動くサイト（Flask） |
