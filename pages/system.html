@@ -333,6 +333,29 @@ sudo apt install -y util-linux-extra
 sudo hwclock -w -f /dev/rtc1
 sudo hwclock -r -f /dev/rtc1</pre>
 
+    <h3>時計のしくみ</h3>
+    <p style="margin:0"><b>1. 時計はずっと動いている</b></p>
+    <ul>
+      <li>CPI-RAS の時計は、ボタン電池（CR2032）で動いている</li>
+      <li>ラズパイの電源が切れていても、コンセントが抜けていても、時刻を刻み続ける</li>
+    </ul>
+    <p style="margin:6px 0 0"><b>2. 電源を入れたときの時刻</b></p>
+    <div class="table-wrap">
+      <table>
+        <tr><th></th><th>電源を入れた直後の時刻</th><th>記録への影響</th></tr>
+        <tr><td><b>設定する前</b></td><td>「最後に電源が切れたときの時刻」から動き始めていた</td>
+          <td>ネットで時刻が合うまでの記録は、ずれた時刻になっていた（今朝の「09:10」がそれ）。ネットがない場所なら、ずっとずれたままだった</td></tr>
+        <tr><td><b>設定したあと</b></td><td>記録のプログラムが動き出す前に、CPI-RAS の時計から正しい時刻を読み込む</td>
+          <td class="ok">1件目の記録から正しい時刻になる。ネットがない場所でも同じ</td></tr>
+      </table>
+    </div>
+    <p style="margin:6px 0 0"><b>補足</b></p>
+    <ul>
+      <li><b>ずれの修正</b>：ネットにつながっているあいだは、1時間ごとに CPI-RAS の時計も正しい時刻に合わせ直す。
+        ネットがない場所でも、CPI-RAS の時計は温度の補正が付いているので、ずれは小さく済む</li>
+      <li><b>ボタン電池の交換</b>：マニュアルでは、電池交換は「修理扱い（販売店か CONTEC に依頼）」となっている。<b>自分で交換しない</b></li>
+    </ul>
+
     <h3>自動で動くようにする</h3>
     <div class="flow">
       <div class="step"><b>電源を入れる</b>ラズパイの時刻は、前に止まったときのまま（ずれている）</div>
@@ -437,7 +460,6 @@ sudo timedatectl set-ntp true</pre>
     <h3>残っていること</h3>
     <ul>
       <li><b>時刻合わせを戻したかの確認</b>：<code>sudo timedatectl set-ntp true</code> を実行していなければ実行する（<code>timedatectl</code> で「NTP service: active」なら戻っている）</li>
-      <li><b>停電中も動かす場合</b>：UPS が必要（BE425M-JP：10,558円、停電を知らせる機能付きの BE550M1-JP：26,378円）</li>
     </ul>
   </div>
 
