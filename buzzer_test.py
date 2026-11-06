@@ -66,6 +66,8 @@ NG_PINS = {
     3: "SHT31（I2C SDA）", 5: "SHT31（I2C SCL）",
     19: "RPi-GP40T（SPI）", 21: "RPi-GP40T（SPI）", 23: "RPi-GP40T（SPI）", 24: "RPi-GP40T（SPI CS）",
     13: "RPi-GP40T（電源）",
+    12: "加速度センサー（SPI1 CS）", 35: "加速度センサー（SPI1 MISO）",
+    38: "加速度センサー（SPI1 MOSI）", 40: "加速度センサー（SPI1 SCLK）",
 }
 
 
