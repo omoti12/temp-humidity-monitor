@@ -95,6 +95,7 @@
     <a href="#pt100">Pt100</a>
     <a href="#ktc">K型熱電対</a>
     <a href="#thdrc">THD-R-C</a>
+    <a href="#accel">加速度センサー</a>
     <a href="#cpiras">電源と時計（CPI-RAS）</a>
     <a href="#power">電圧・電流のまとめ</a>
     <a href="#pi">ラズパイの中の処理</a>
@@ -259,6 +260,45 @@ GP40T は 150Ω の両端（A0 と G0 のあいだ）の電圧を測る。湿度
       <li>例：温度側が 1.32V → 8.8mA → -19.9 + 4.8 ÷ 16 × 79.9 = 4.1℃</li>
       <li>3.6〜20.5mA を外れたら、断線・故障の疑いとして記録しない</li>
       <li>GP40T は 0〜5V のレンジで使う（実際は 0〜5.12V まで測れる）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="accel">加速度センサー<span class="tag" style="color:var(--muted)">記録・表示</span></h2>
+  <div class="card">
+    <div class="flow">
+      <div class="step"><b>加速度センサー</b>X・Y・Z の傾き・揺れを電圧で出す<span class="v">0g = 1.65V、1g で 0.66V 変わる</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>MCP3004</b>電圧を 0〜1023 の数字に変える（Ch0 = X、Ch1 = Y、Ch2 = Z）<span class="v">基準 3.3V</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>SPI1</b>ラズパイの2つ目の SPI で読む（GP40T の SPI0 とは別の線）<span class="v">0.1秒ごと</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>ラズパイ</b>数字 → 電圧 → g に計算して記録<span class="v">今の値は1秒・記録は1分ごと</span></div>
+    </div>
+    <h3>つなぎ方（ラズパイにつなぐのは4本）</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>線</th><th>MCP3004 の足</th><th>ラズパイのピン</th><th>基板の「39」の印を上にして見たとき</th></tr>
+        <tr><td>緑</td><td>CLK（時計の合図）</td><td>40番（SPI1 SCLK）</td><td>上から1番目・ふち側の列</td></tr>
+        <tr><td>オレンジ</td><td>DIN（ラズパイ → MCP3004）</td><td>38番（SPI1 MOSI）</td><td>上から2番目・ふち側の列</td></tr>
+        <tr><td>黄</td><td>DOUT（MCP3004 → ラズパイ）</td><td>35番（SPI1 MISO）</td><td>上から3番目・内側の列</td></tr>
+        <tr><td>茶</td><td>CS（呼び出しの合図）</td><td>12番（SPI1 CE0）</td><td>上から15番目（下から6番目）・ふち側の列</td></tr>
+      </table>
+    </div>
+    <ul>
+      <li>MCP3004 と加速度センサーの 3.3V・GND は、SHT31 と同じブレッドボードの ＋・－ の列からもらう</li>
+      <li>GP40T（THD-R-C）が使う SPI0 とは別の線（SPI1）なので、THD-R-C の記録と同時に使える</li>
+      <li>準備として <code>/boot/firmware/config.txt</code> に <code>dtoverlay=spi1-1cs</code> を書く（再起動なしで使うときは <code>sudo dtoverlay spi1-1cs</code>）</li>
+    </ul>
+    <h3>数字の計算</h3>
+    <span class="formula">電圧[V] = MCP3004 の数字 ÷ 1023 × 3.3V
+加速度[g] = (電圧 − 1.65V) ÷ 0.66V
+揺れ[g]   = |√(X² + Y² + Z²) − 1|   （止まっていれば 0 に近い。1分間・10分間で一番大きかった値を残す）</span>
+    <ul>
+      <li>平らに置くと Z が約 1g（地球の重力）、X・Y が約 0g</li>
+      <li>換算は、3.3V で使うアナログの加速度センサー（KXR94-2050 など）の値</li>
+      <li>記録（CSV）：1分ごとに X・Y・Z の平均と、その1分の揺れの最大。<code>templog/accel/日付.csv</code></li>
+      <li>サイト：湿度のグラフの下に「加速度」の欄が出る（加速度センサーを動かしているときだけ）。右上に今の値、グラフは10分ごとの平均と揺れの最大</li>
     </ul>
   </div>
 
@@ -510,6 +550,7 @@ sudo timedatectl set-ntp true</pre>
       <tr><td>pages-publish</td><td>記録を10分ごとの平均・最高・最低にまとめ、公開サイトへ送る</td><td class="num">10分</td><td>GitHub Pages</td></tr>
       <tr><td>templog-backup</td><td>記録と1日ごとのグラフ画像を Google ドライブへ</td><td class="num">1時間</td><td>Google ドライブ</td></tr>
       <tr><td>netcheck</td><td>ネットが切れたら、つなぎ直す・再起動する</td><td class="num">常に見張る</td><td>―</td></tr>
+      <tr><td>accel-logger</td><td>加速度センサーを MCP3004（SPI1）で読んで記録</td><td class="num">0.1秒（今の値は1秒・記録は1分）</td><td><code>templog/accel/日付.csv</code></td></tr>
       <tr><td>cpi-rtc-load</td><td>起動したときに、CPI-RAS の時計から今の時刻を読み込む</td><td class="num">起動時に1回</td><td>ラズパイの時計</td></tr>
       <tr><td>cpi-rtc-save</td><td>ネットで合わせた正しい時刻を、CPI-RAS の時計に書き込む</td><td class="num">1時間（起動5分後から）</td><td>CPI-RAS の時計</td></tr>
     </table>

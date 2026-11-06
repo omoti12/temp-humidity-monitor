@@ -205,7 +205,7 @@ def now_reading():
 def api_now():
     """現在値だけを返す。GitHub Pages のサイトから読むため、別サイトからの読み込みを許可する。"""
     resp = jsonify({"latest": now_reading(), "location": alarm_settings.load()["location_name"],
-                    **compare_data.all_now()})     # 比較用センサー thdrc・pt100（動かしていなければ null）
+                    **compare_data.all_now()})     # 比較用センサー thdrc・pt100・ktc と加速度 accel（動かしていなければ null）
     # 別のサイト（omoti12.github.io）のページから読めるようにする
     resp.headers["Access-Control-Allow-Origin"] = "*"
     # 古い値が使い回されないよう、ブラウザや途中の経路に保存させない

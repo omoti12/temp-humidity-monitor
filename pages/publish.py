@@ -145,7 +145,7 @@ def build():
         # CSVが前回から変わっていない日は作り直さない（ふだん作り直すのは今日の分だけ）
         # 比較用センサー（THD-R-C・Pt100）の記録が新しくなったときも作り直す
         d = datetime.strptime(day, "%Y-%m-%d")
-        cmp_srcs = [compare_data.csv_path(name, d) for name in compare_data.SENSORS]
+        cmp_srcs = [compare_data.csv_path(name, d) for name in compare_data.SENSORS + (compare_data.ACCEL,)]
         changed = max([os.path.getmtime(src)] + [os.path.getmtime(c) for c in cmp_srcs if os.path.exists(c)])
         if os.path.exists(out) and os.path.getmtime(out) >= changed and is_current(out):
             continue

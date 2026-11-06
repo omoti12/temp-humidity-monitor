@@ -28,14 +28,14 @@
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e5e7eb;
     --temp: #d9480f; --hum: #1c7ed6; --ok: #2b8a3e; --warn: #e8590c; --out: #7048e8;
-    --hot-warn: #b08800; --cold-warn: #9775fa; --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e;
+    --hot-warn: #b08800; --cold-warn: #9775fa; --cmp: #0b7285; --pt: #c2255c; --ktc: #2b8a3e; --ax: #e8590c; --ay: #2f9e44; --az: #1971c2; --shake: #868e96;
   }
   /* スマホやPCがダークモードのときの色 */
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14161b; --card: #1d2027; --text: #e9ecef; --muted: #9aa1ab; --line: #2c313a;
       --temp: #ff8a5c; --hum: #66b2ff; --ok: #51cf66; --warn: #ff922b; --out: #b197fc;
-      --hot-warn: #fcc419; --cold-warn: #d0bfff; --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a;
+      --hot-warn: #fcc419; --cold-warn: #d0bfff; --cmp: #66d9e8; --pt: #faa2c1; --ktc: #8ce99a; --ax: #ffa94d; --ay: #8ce99a; --az: #74c0fc; --shake: #ced4da;
     }
   }
   /* ---- 全体のレイアウト ---- */
@@ -95,6 +95,9 @@
   .zoombar .hint { color: var(--muted); font-size: .8rem; }
   .chart-box { position: relative; height: 320px; }
   .chart-box[hidden] { display: none; }
+  /* 加速度の今の値（グラフの右上） */
+  .accel-now { font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .accel-now b { margin: 0 2px 0 8px; color: var(--muted); font-weight: 400; }
   /* 温度・露点温度の切り替えボタン（選んでいる方を濃くする） */
   .chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
   .switch { display: flex; gap: 4px; }
@@ -208,6 +211,14 @@
     <div class="label">湿度（10分ごとの平均）</div>
     <div class="chart-box"><canvas id="humChart"></canvas></div>
   </div>
+  <!-- 加速度センサー（動かしているときだけ出す。今の値は5秒ごと、グラフは記録がある日だけ） -->
+  <div class="card chart-card" id="accelCard" hidden>
+    <div class="chart-head">
+      <div class="label">加速度（X・Y・Z は10分ごとの平均、揺れは10分間の最大）</div>
+      <div class="accel-now" id="accelNow"></div>
+    </div>
+    <div class="chart-box" id="accelBox"><canvas id="accelChart"></canvas></div>
+  </div>
   <div class="empty" id="empty" hidden>この日の記録はありません</div>
 
   <!-- 管理（警報の設定・警報メールの宛先）。押すと開く。管理用パスワードが必要 -->
@@ -294,9 +305,9 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 const fmt = (d) => d.toLocaleDateString("sv-SE");   // YYYY-MM-DD
 // 今表示している日（最初は今日）
 let day = fmt(new Date());
-let tempChart, humChart, dewChart;
-// 3つのグラフ全部（拡大・移動を一緒にするため）と、上の段に今出しているグラフ（温度か露点温度）
-const allCharts = () => [tempChart, humChart, dewChart];
+let tempChart, humChart, dewChart, accelChart;
+// グラフ全部（拡大・移動を一緒にするため）と、上の段に今出しているグラフ（温度か露点温度）
+const allCharts = () => [tempChart, humChart, dewChart, accelChart];
 let topMode = "temp";
 const topChart = () => (topMode === "dew" ? dewChart : tempChart);
 
@@ -328,7 +339,7 @@ function lineOpts(unit) {
                                    filter: (i, d) => !i.text.startsWith("_")
                                      && d.datasets[i.datasetIndex].data.some((v) => v != null) } },
                tooltip: { filter: (i) => !i.dataset.label.startsWith("_") && !i.dataset.threshold && i.parsed.y != null,
-                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}${unit}` } },
+                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(unit === "g" ? 2 : 1)}${unit}` } },
                // 拡大・移動の設定（横方向＝時刻だけ。温度と湿度のグラフは syncRange で一緒に動かす）
                zoom: {
                  limits: { x: { min: 0, max: slots.length - 1, minRange: 5 } },
@@ -405,6 +416,21 @@ function buildCharts() {
         pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, hidden: true },
     ] },
     options: lineOpts("℃"),
+  });
+}
+
+// 加速度のグラフ（加速度センサーの記録がある日だけ出す）
+function buildAccelChart() {
+  const line = (label, color, extra = {}) => ({ label, data: [], borderColor: css(color), backgroundColor: css(color),
+                                               pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, ...extra });
+  accelChart = new Chart($("accelChart"), {
+    type: "line",
+    data: { labels: slots, datasets: [
+      line("X", "--ax"), line("Y", "--ay"), line("Z", "--az"),
+      // 揺れ（10分間の最大）。ふだんは 0 に近く、たたく・持ち上げると大きくなる
+      line("揺れ（最大）", "--shake", { borderDash: [4, 3] }),
+    ] },
+    options: lineOpts("g"),
   });
 }
 
@@ -526,6 +552,23 @@ function showPlace(name) {
   document.title = name ? `温湿度モニター｜${name}` : "温湿度モニター";
 }
 
+// 加速度センサーの今の値をグラフの右上に出す（a = {x, y, z, shake}。動かしていなければ null）
+let accelLive = false;
+function showAccelNow(a) {
+  accelLive = !!a;
+  $("accelNow").innerHTML = a
+    ? `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ</b>${a.shake.toFixed(2)}g` : "";
+  showAccelCard();
+}
+// 加速度の欄は、今の値かその日の記録があるときだけ出す
+let accelHasDay = false;
+function showAccelCard() {
+  const wasHidden = $("accelCard").hidden;
+  $("accelCard").hidden = !(accelLive || accelHasDay);
+  $("accelBox").hidden = !accelHasDay;
+  if (wasHidden && !$("accelCard").hidden) accelChart.resize();     // 隠れていたグラフは、出したときに大きさを合わせる
+}
+
 // ラズパイの窓口から現在値を読む（5秒ごと）
 async function loadNow() {
   if (!NOW_URL) return;
@@ -535,6 +578,7 @@ async function loadNow() {
     live = !!(n && n.latest);
     if (live) showLatest({ ...n.latest, time: n.latest.iso }, true);
     showCompare(live ? n.latest : null, n);   // 比較用センサーを動かしていなければ隠れる
+    showAccelNow(n && n.accel);
     if (n) showPlace(n.location);
   } catch (e) {
     live = false;   // ラズパイにつながらないときは10分ごとのデータを表示する
@@ -583,6 +627,13 @@ async function load() {
   humChart.data.datasets[1].hidden = humChart.data.datasets[2].hidden = th.hum_alarm == null;
   showCompareLines(CMP_POINTS);
   showImported();
+  // 加速度（記録がある日だけグラフを出す）
+  const accelBy = Object.fromEntries(((dayData && dayData.accel_points) || []).map((p) => [p.time, p]));
+  ["x", "y", "z", "shake"].forEach((k, i) => {
+    accelChart.data.datasets[i].data = slots.map((s) => (accelBy[s] ? accelBy[s][k] : null));
+  });
+  accelHasDay = Object.keys(accelBy).length > 0;
+  showAccelCard();
   for (const c of allCharts()) c.update();
 
   // 記録がない日は「この日の記録はありません」を出し、CSVのリンクを隠す（取り込んだ記録があれば出さない）
@@ -1104,6 +1155,7 @@ $("addForm").onsubmit = async (e) => {
 
 // ---- ページを開いたときに始まる処理 ----
 buildCharts();
+buildAccelChart();
 // 温度・露点温度の切り替えボタン（前に選んだ方を覚えておく）
 document.querySelectorAll("[data-top]").forEach((b) => { b.onclick = () => setTop(b.dataset.top); });
 let savedTop = "temp";

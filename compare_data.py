@@ -1,4 +1,4 @@
-"""比較用センサー（THD-R-C・Pt100・K型熱電対）の記録を読む部品。
+"""比較用センサー（THD-R-C・Pt100・K型熱電対）と加速度センサーの記録を読む部品。
 web/app.py と pages/publish.py の両方から使う。"""
 # ============================================================
 # このファイルの役割
@@ -19,6 +19,9 @@ LOG_BASE = os.environ.get("LOG_DIR", "/home/iot-user/templog")
 NOW_DIR = os.environ.get("COMPARE_NOW_DIR", "/dev/shm/temp-monitor")
 STEP_MIN = 10          # グラフの間隔（分）。SHT31 のグラフと同じ
 SENSORS = ("thdrc", "pt100", "ktc")    # サイトに出す比較用センサーの名前
+# 加速度センサー（accel_logger.py）。温湿度とは記録の形が違うので、別の関数で読む
+ACCEL = "accel"
+ACCEL_HEADER = ["日時", "X(g)", "Y(g)", "Z(g)", "揺れ(g)"]
 # サイトの「CSVを取り込む」で取り込んだ記録（ほかの記録計のCSV）。1つだけ置き、新しく取り込むと入れ替わる
 IMPORT_PATH = os.path.join(LOG_BASE, "import", "import.json")
 
@@ -92,11 +95,36 @@ def now_reading(name):
     return n
 
 
+def accel_10min(day):
+    """加速度センサーの記録を10分単位にまとめる。X・Y・Z は平均、揺れはその10分の最大。
+    [{"time": "10:30", "x": .., "y": .., "z": .., "shake": ..}, ...]"""
+    path = csv_path(ACCEL, day)
+    if not os.path.exists(path):
+        return []
+    buckets = {}
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try:
+                ts = datetime.strptime(r["日時"], "%Y-%m-%d %H:%M:%S")
+                v = [float(r[k]) for k in ACCEL_HEADER[1:]]
+            except (KeyError, TypeError, ValueError):
+                continue    # 書き込み途中の行などは飛ばす
+            key = ts.replace(minute=ts.minute - ts.minute % STEP_MIN, second=0)
+            buckets.setdefault(key, []).append(v)
+    out = []
+    for k in sorted(buckets):
+        vs = buckets[k]
+        avg = lambda i: round(sum(v[i] for v in vs) / len(vs), 3)
+        out.append({"time": k.strftime("%H:%M"), "x": avg(0), "y": avg(1), "z": avg(2),
+                    "shake": round(max(v[3] for v in vs), 3)})
+    return out
+
+
 def all_points(day):
-    """サイト用: 全センサーの10分ごとの平均 {"thdrc": [...], "pt100": [...], "ktc": [...]}"""
-    return {name: every_10min(name, day) for name in SENSORS}
+    """サイト用: 全センサーの10分ごとの記録 {"thdrc": [...], "pt100": [...], "ktc": [...], "accel": [...]}"""
+    return {**{name: every_10min(name, day) for name in SENSORS}, ACCEL: accel_10min(day)}
 
 
 def all_now():
-    """サイト用: 全センサーの現在値 {"thdrc": {...} または None, "pt100": ...}"""
-    return {name: now_reading(name) for name in SENSORS}
+    """サイト用: 全センサーの現在値 {"thdrc": {...} または None, "pt100": ..., "accel": ...}"""
+    return {name: now_reading(name) for name in SENSORS + (ACCEL,)}

@@ -1,0 +1,25 @@
+# ============================================================
+# 加速度センサーのロガー（accel_logger.py）を常に動かし続けるための設定
+#   ・ラズパイの電源を入れると自動で起動する
+#   ・止まったら（SPI1 の準備がないときなど）10秒後に自動で再起動する
+# よく使うコマンド
+#   状態を見る   : systemctl status accel-logger
+#   ログを見る   : journalctl -u accel-logger -n 20
+#   止める       : sudo systemctl stop accel-logger
+# このファイルを書き換えたら : sudo cp でコピー → sudo systemctl daemon-reload → 再起動
+# ============================================================
+[Unit]
+Description=Accelerometer (MCP3004 on SPI1) logger
+
+[Service]
+ExecStart=/usr/bin/python3 /home/iot-user/temp-monitor/accel_logger.py
+Environment=LOG_DIR=/home/iot-user/templog
+WorkingDirectory=/home/iot-user
+# 止まったら必ず再起動する（10秒待ってから）
+Restart=always
+RestartSec=10
+# iot-user として動かす（root では動かさない）
+User=iot-user
+
+[Install]
+WantedBy=multi-user.target
