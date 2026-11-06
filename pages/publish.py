@@ -146,6 +146,9 @@ def build():
         # 比較用センサー（THD-R-C・Pt100）の記録が新しくなったときも作り直す
         d = datetime.strptime(day, "%Y-%m-%d")
         cmp_srcs = [compare_data.csv_path(name, d) for name in compare_data.SENSORS + (compare_data.ACCEL,)]
+        # 加速度の基準（accel_base.json）を決め直したときも、加速度の記録がある日は作り直す
+        if os.path.exists(compare_data.csv_path(compare_data.ACCEL, d)):
+            cmp_srcs.append(compare_data.ACCEL_BASE_PATH)
         changed = max([os.path.getmtime(src)] + [os.path.getmtime(c) for c in cmp_srcs if os.path.exists(c)])
         if os.path.exists(out) and os.path.getmtime(out) >= changed and is_current(out):
             continue

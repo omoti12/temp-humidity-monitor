@@ -10,6 +10,7 @@ web/app.py と pages/publish.py の両方から使う。"""
 # ============================================================
 import csv
 import json
+import math
 import os
 from datetime import datetime, timedelta
 
@@ -21,7 +22,31 @@ STEP_MIN = 10          # グラフの間隔（分）。SHT31 のグラフと同�
 SENSORS = ("thdrc", "pt100", "ktc")    # サイトに出す比較用センサーの名前
 # 加速度センサー（accel_logger.py）。温湿度とは記録の形が違うので、別の関数で読む
 ACCEL = "accel"
-ACCEL_HEADER = ["日時", "X(g)", "Y(g)", "Z(g)", "揺れ(g)"]
+ACCEL_HEADER = ["日時", "X(g)", "Y(g)", "Z(g)", "揺れ(g)", "傾き(度)"]
+# 加速度の「基準」（置いた位置での X・Y・Z。accel_base.py で決める）。ないときは基準なし
+ACCEL_BASE_PATH = os.path.join(os.environ.get("CONFIG_DIR", "/home/iot-user/.config/temp-monitor"), "accel_base.json")
+
+
+def accel_base():
+    """加速度の基準 {"x": .., "y": .., "z": .., "set": 決めた日時} を返す。決めていなければ None"""
+    try:
+        with open(ACCEL_BASE_PATH, encoding="utf-8") as f:
+            b = json.load(f)
+        return {k: b[k] for k in ("x", "y", "z", "set")}
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def tilt_deg(x, y, z, base):
+    """基準の向きから、今の向き（x, y, z）が何度傾いたか。基準がなければ None"""
+    if not base:
+        return None
+    v, b = (x, y, z), (base["x"], base["y"], base["z"])
+    nv, nb = math.sqrt(sum(a * a for a in v)), math.sqrt(sum(a * a for a in b))
+    if nv == 0 or nb == 0:
+        return None
+    c = sum(a * c for a, c in zip(v, b)) / (nv * nb)
+    return math.degrees(math.acos(max(-1.0, min(1.0, c))))   # 計算の誤差で ±1 を少し超えないように
 # サイトの「CSVを取り込む」で取り込んだ記録（ほかの記録計のCSV）。1つだけ置き、新しく取り込むと入れ替わる
 IMPORT_PATH = os.path.join(LOG_BASE, "import", "import.json")
 
@@ -96,8 +121,9 @@ def now_reading(name):
 
 
 def accel_10min(day):
-    """加速度センサーの記録を10分単位にまとめる。X・Y・Z は平均、揺れはその10分の最大。
-    [{"time": "10:30", "x": .., "y": .., "z": .., "shake": ..}, ...]"""
+    """加速度センサーの記録を10分単位にまとめる。X・Y・Z・傾きは平均、揺れはその10分の最大。
+    基準を決めてあれば、X・Y・Z は「基準からの変化」、傾きは「基準から何度傾いたか」にする（基準がなければ傾きは None）
+    [{"time": "10:30", "x": .., "y": .., "z": .., "shake": .., "tilt": ..}, ...]"""
     path = csv_path(ACCEL, day)
     if not os.path.exists(path):
         return []
@@ -106,17 +132,23 @@ def accel_10min(day):
         for r in csv.DictReader(f):
             try:
                 ts = datetime.strptime(r["日時"], "%Y-%m-%d %H:%M:%S")
-                v = [float(r[k]) for k in ACCEL_HEADER[1:]]
+                v = [float(r[k]) for k in ACCEL_HEADER[1:5]]     # X・Y・Z・揺れ（傾きは今の基準で計算し直す）
             except (KeyError, TypeError, ValueError):
                 continue    # 書き込み途中の行などは飛ばす
             key = ts.replace(minute=ts.minute - ts.minute % STEP_MIN, second=0)
             buckets.setdefault(key, []).append(v)
+    base = accel_base()
     out = []
     for k in sorted(buckets):
         vs = buckets[k]
-        avg = lambda i: round(sum(v[i] for v in vs) / len(vs), 3)
-        out.append({"time": k.strftime("%H:%M"), "x": avg(0), "y": avg(1), "z": avg(2),
-                    "shake": round(max(v[3] for v in vs), 3)})
+        avg = lambda i: sum(v[i] for v in vs) / len(vs)
+        x, y, z = avg(0), avg(1), avg(2)
+        tilt = tilt_deg(x, y, z, base)
+        if base:
+            x, y, z = x - base["x"], y - base["y"], z - base["z"]
+        out.append({"time": k.strftime("%H:%M"), "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),
+                    "shake": round(max(v[3] for v in vs), 3),
+                    "tilt": round(tilt, 1) if tilt is not None else None})
     return out
 
 

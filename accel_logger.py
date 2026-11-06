@@ -8,6 +8,8 @@
 #        X・Y・Z … その1分間の平均[g]
 #        揺れ    … その1分間で、加速度の大きさが 1g（止まっているとき）から一番離れた量[g]
 #                  机をたたく・持ち上げるなどで大きくなる。止まっていれば 0 に近い
+#        傾き    … 基準（accel_base.py で決めた、置いた位置での向き）から何度傾いたか[度]
+#                  基準を決めていなければ空。基準は1分ごとに読み直すので、決め直しても再起動はいらない
 #
 # つなぎ方: accel_test.py と同じ（SPI1。38番 DIN・35番 DOUT・40番 CLK・12番 CS）
 #   準備として /boot/firmware/config.txt に dtoverlay=spi1-1cs が必要
@@ -61,17 +63,23 @@ def shake_of(vals):
     return max(abs(math.sqrt(x * x + y * y + z * z) - 1) for x, y, z in vals)
 
 
-def write_now(now, x, y, z, shake):
-    """今の値を accel.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する"""
+def write_now(now, x, y, z, shake, base):
+    """今の値を accel.json に書く。読み取り中に中途半端なファイルが見えないよう、置き換えで更新する。
+    基準があれば、基準からの変化（dx・dy・dz）と傾き（tilt）も書く"""
     path = compare_data.now_path(NAME)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    tilt = compare_data.tilt_deg(x, y, z, base)
+    d = {"iso": now.astimezone().isoformat(timespec="seconds"),
+         "x": round(x, 2), "y": round(y, 2), "z": round(z, 2), "shake": round(shake, 2),
+         "base": bool(base), "tilt": round(tilt, 1) if tilt is not None else None}
+    if base:
+        d.update(dx=round(x - base["x"], 2), dy=round(y - base["y"], 2), dz=round(z - base["z"], 2))
     with open(path + ".tmp", "w", encoding="utf-8") as f:
-        json.dump({"iso": now.astimezone().isoformat(timespec="seconds"),
-                   "x": round(x, 2), "y": round(y, 2), "z": round(z, 2), "shake": round(shake, 2)}, f)
+        json.dump(d, f)
     os.replace(path + ".tmp", path)
 
 
-def append_csv(now, x, y, z, shake):
+def append_csv(now, x, y, z, shake, base):
     # その日のCSVファイルに1行追記する（例: /home/iot-user/templog/accel/2026-11-06.csv）
     os.makedirs(compare_data.log_dir(NAME), exist_ok=True)
     path = compare_data.csv_path(NAME, now)
@@ -80,7 +88,9 @@ def append_csv(now, x, y, z, shake):
         w = csv.writer(f)
         if new:
             w.writerow(compare_data.ACCEL_HEADER)
-        w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), f"{x:.3f}", f"{y:.3f}", f"{z:.3f}", f"{shake:.3f}"])
+        tilt = compare_data.tilt_deg(x, y, z, base)
+        w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), f"{x:.3f}", f"{y:.3f}", f"{z:.3f}", f"{shake:.3f}",
+                    f"{tilt:.1f}" if tilt is not None else ""])
 
 
 def main():
@@ -97,22 +107,24 @@ def main():
     sec = []        # この1秒間の (x, y, z)
     last_sec = int(time.time())
     last_min = int(time.time() // INTERVAL)
+    base = compare_data.accel_base()    # 基準（1分ごとに読み直す）
     while True:
         xyz = read_g(spi)
         minute.append(xyz)
         sec.append(xyz)
         now_t = time.time()
         if int(now_t) != last_sec:          # 1秒ごと：今の値
-            write_now(datetime.now(), average(sec, 0), average(sec, 1), average(sec, 2), shake_of(sec))
+            write_now(datetime.now(), average(sec, 0), average(sec, 1), average(sec, 2), shake_of(sec), base)
             sec = []
             last_sec = int(now_t)
         if int(now_t // INTERVAL) != last_min:  # 1分ごと：記録
             now = datetime.now()
             x, y, z, shake = average(minute, 0), average(minute, 1), average(minute, 2), shake_of(minute)
-            append_csv(now, x, y, z, shake)
+            append_csv(now, x, y, z, shake, base)
             print(f"{now:%H:%M:%S}  X {x:+.2f}g  Y {y:+.2f}g  Z {z:+.2f}g  揺れ {shake:.2f}g", flush=True)
             minute = []
             last_min = int(now_t // INTERVAL)
+            base = compare_data.accel_base()
         time.sleep(SAMPLE)
 
 

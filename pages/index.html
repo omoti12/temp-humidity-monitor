@@ -214,7 +214,7 @@
   <!-- 加速度センサー（動かしているときだけ出す。今の値は5秒ごと、グラフは記録がある日だけ） -->
   <div class="card chart-card" id="accelCard" hidden>
     <div class="chart-head">
-      <div class="label">加速度（X・Y・Z は10分ごとの平均、揺れは10分間の最大）</div>
+      <div class="label" id="accelLabel">加速度（X・Y・Z は10分ごとの平均、揺れは10分間の最大）</div>
       <div class="accel-now" id="accelNow"></div>
     </div>
     <div class="chart-box" id="accelBox"><canvas id="accelChart"></canvas></div>
@@ -339,7 +339,10 @@ function lineOpts(unit) {
                                    filter: (i, d) => !i.text.startsWith("_")
                                      && d.datasets[i.datasetIndex].data.some((v) => v != null) } },
                tooltip: { filter: (i) => !i.dataset.label.startsWith("_") && !i.dataset.threshold && i.parsed.y != null,
-                          callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(unit === "g" ? 2 : 1)}${unit}` } },
+                          callbacks: { label: (c) => {
+                            const u = c.dataset.unit || unit;   // 線ごとの単位（加速度のグラフの「傾き」は °）
+                            return `${c.dataset.label}: ${c.parsed.y.toFixed(u === "g" ? 2 : 1)}${u}`;
+                          } } },
                // 拡大・移動の設定（横方向＝時刻だけ。温度と湿度のグラフは syncRange で一緒に動かす）
                zoom: {
                  limits: { x: { min: 0, max: slots.length - 1, minRange: 5 } },
@@ -429,9 +432,14 @@ function buildAccelChart() {
       line("X", "--ax"), line("Y", "--ay"), line("Z", "--az"),
       // 揺れ（10分間の最大）。ふだんは 0 に近く、たたく・持ち上げると大きくなる
       line("揺れ（最大）", "--shake", { borderDash: [4, 3] }),
+      // 傾き（基準から何度傾いたか。右の目盛り）。基準を決めていないときは出さない
+      line("傾き", "--text", { yAxisID: "y2", unit: "°", borderDash: [2, 2], hidden: true }),
     ] },
     options: lineOpts("g"),
   });
+  // 傾き用の右の目盛り（度）
+  accelChart.options.scales.y2 = { position: "right", grid: { display: false }, suggestedMin: 0, suggestedMax: 5,
+                                   ticks: { color: css("--muted"), callback: (v) => v + "°" } };
 }
 
 // 上の段のグラフを「温度」（mode = "temp"）か「露点温度」（"dew"）に切り替える
@@ -552,12 +560,16 @@ function showPlace(name) {
   document.title = name ? `温湿度モニター｜${name}` : "温湿度モニター";
 }
 
-// 加速度センサーの今の値をグラフの右上に出す（a = {x, y, z, shake}。動かしていなければ null）
+// 加速度センサーの今の値をグラフの右上に出す（a = {x, y, z, shake, base, dx, dy, dz, tilt}。動かしていなければ null）
+// 基準を決めてあれば、X・Y・Z は「基準からの変化」と「傾き」を出す
 let accelLive = false;
 function showAccelNow(a) {
   accelLive = !!a;
-  $("accelNow").innerHTML = a
-    ? `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ</b>${a.shake.toFixed(2)}g` : "";
+  const sg = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+  $("accelNow").innerHTML = !a ? ""
+    : a.base
+      ? `基準から <b>X</b>${sg(a.dx)}g <b>Y</b>${sg(a.dy)}g <b>Z</b>${sg(a.dz)}g <b>傾き</b>${a.tilt.toFixed(1)}° <b>揺れ</b>${a.shake.toFixed(2)}g`
+      : `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ</b>${a.shake.toFixed(2)}g`;
   showAccelCard();
 }
 // 加速度の欄は、今の値かその日の記録があるときだけ出す
@@ -629,10 +641,18 @@ async function load() {
   showImported();
   // 加速度（記録がある日だけグラフを出す）
   const accelBy = Object.fromEntries(((dayData && dayData.accel_points) || []).map((p) => [p.time, p]));
-  ["x", "y", "z", "shake"].forEach((k, i) => {
-    accelChart.data.datasets[i].data = slots.map((s) => (accelBy[s] ? accelBy[s][k] : null));
+  ["x", "y", "z", "shake", "tilt"].forEach((k, i) => {
+    accelChart.data.datasets[i].data = slots.map((s) => (accelBy[s] ? accelBy[s][k] ?? null : null));
   });
   accelHasDay = Object.keys(accelBy).length > 0;
+  // 基準を決めてあれば（傾きの値があれば）、X・Y・Z は基準からの変化。傾きの線も出す
+  const hasBase = accelChart.data.datasets[4].data.some((v) => v != null);
+  accelChart.data.datasets[4].hidden = !hasBase;
+  accelChart.options.scales.y2.display = hasBase;
+  ["X", "Y", "Z"].forEach((n, i) => { accelChart.data.datasets[i].label = hasBase ? `${n}（基準から）` : n; });
+  $("accelLabel").textContent = hasBase
+    ? "加速度（X・Y・Z は基準からの変化と傾きの10分ごとの平均、揺れは10分間の最大）"
+    : "加速度（X・Y・Z は10分ごとの平均、揺れは10分間の最大）";
   showAccelCard();
   for (const c of allCharts()) c.update();
 
