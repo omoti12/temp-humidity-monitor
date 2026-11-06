@@ -4,6 +4,7 @@
 # このプログラムの役割（記録と表示だけ。警報メールは送らない）
 #   1. 0.1秒ごとに X・Y・Z の加速度を読む
 #   2. 1秒ごとに、今の値を accel.json に書く（サイトの「加速度センサー（今の値）」用）
+#        揺れは「直近5秒間の最大」。サイトは5秒ごとに読みに来るので、そのあいだの短い揺れも見逃さない
 #   3. 1分に1回、templog/accel/日付.csv に記録する（グラフ用）
 #        X・Y・Z … その1分間の平均[g]
 #        揺れ    … その1分間で、加速度の大きさが 1g（止まっているとき）から一番離れた量[g]
@@ -25,6 +26,7 @@ import math
 import os
 import sys
 import time
+from collections import deque
 from datetime import datetime
 
 import spidev
@@ -36,6 +38,7 @@ SPI_BUS, SPI_DEV = 1, 0 # SPI1 の CE0（12番ピン）
 VREF = 3.3              # MCP3004 の基準の電圧[V]
 SAMPLE = 0.1            # 読む間隔[秒]
 INTERVAL = 60           # 記録（CSV）の間隔[秒]
+NOW_SHAKE_SEC = 5       # 今の値の揺れを、直近何秒間の最大にするか（サイトが読みに来る間隔と同じ）
 
 # 加速度センサーの換算（3.3V で使う KXR94-2050 などのアナログ出力の場合）
 #   0g のとき 電源の半分（1.65V）、1g あたり 電源の1/5（0.66V）変わる
@@ -108,13 +111,15 @@ def main():
     last_sec = int(time.time())
     last_min = int(time.time() // INTERVAL)
     base = compare_data.accel_base()    # 基準（1分ごとに読み直す）
+    recent_shakes = deque(maxlen=NOW_SHAKE_SEC)     # 直近5秒の、1秒ごとの揺れの最大
     while True:
         xyz = read_g(spi)
         minute.append(xyz)
         sec.append(xyz)
         now_t = time.time()
         if int(now_t) != last_sec:          # 1秒ごと：今の値
-            write_now(datetime.now(), average(sec, 0), average(sec, 1), average(sec, 2), shake_of(sec), base)
+            recent_shakes.append(shake_of(sec))
+            write_now(datetime.now(), average(sec, 0), average(sec, 1), average(sec, 2), max(recent_shakes), base)
             sec = []
             last_sec = int(now_t)
         if int(now_t // INTERVAL) != last_min:  # 1分ごと：記録

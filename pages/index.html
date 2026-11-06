@@ -561,6 +561,7 @@ function showPlace(name) {
 }
 
 // 加速度センサーの今の値をグラフの右上に出す（a = {x, y, z, shake, base, dx, dy, dz, tilt}。動かしていなければ null）
+// 揺れ（shake）は直近5秒間の最大（5秒ごとに読むので、そのあいだの短い揺れも出る）
 // 基準を決めてあれば、X・Y・Z は「基準からの変化」と「傾き」を出す
 let accelLive = false;
 function showAccelNow(a) {
@@ -568,8 +569,8 @@ function showAccelNow(a) {
   const sg = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
   $("accelNow").innerHTML = !a ? ""
     : a.base
-      ? `基準から <b>X</b>${sg(a.dx)}g <b>Y</b>${sg(a.dy)}g <b>Z</b>${sg(a.dz)}g <b>傾き</b>${a.tilt.toFixed(1)}° <b>揺れ</b>${a.shake.toFixed(2)}g`
-      : `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ</b>${a.shake.toFixed(2)}g`;
+      ? `基準から <b>X</b>${sg(a.dx)}g <b>Y</b>${sg(a.dy)}g <b>Z</b>${sg(a.dz)}g <b>傾き</b>${a.tilt.toFixed(1)}° <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}g`
+      : `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}g`;
   showAccelCard();
 }
 // 加速度の欄は、今の値かその日の記録があるときだけ出す
