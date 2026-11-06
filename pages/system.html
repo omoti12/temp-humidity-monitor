@@ -356,6 +356,21 @@ sudo hwclock -r -f /dev/rtc1</pre>
       <li><b>ボタン電池の交換</b>：マニュアルでは、電池交換は「修理扱い（販売店か CONTEC に依頼）」となっている。<b>自分で交換しない</b></li>
     </ul>
 
+    <h3>時計の電圧・電流</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>場所</th><th>大きさ</th><th>メモ</th></tr>
+        <tr><td>ボタン電池（CR2032）</td><td class="num">3V</td><td>リチウム電池。容量は 約220mAh（CR2032 の一般的な値）</td></tr>
+        <tr><td>時計の部品（RX8900）が使う電流</td><td class="num">約0.7µA</td><td>時刻を刻むだけのときの代表値（部品のデータシートの値。1µA = 0.001mA）</td></tr>
+        <tr><td>ラズパイとのやり取り（I2C）</td><td class="num">3.3V</td><td>ラズパイの 3番・5番ピン（SDA・SCL）。SHT31 と同じ線に、32番として並んでいる</td></tr>
+      </table>
+    </div>
+    <ul>
+      <li>ラズパイが動いているあいだは基板の電源で動き、電源が切れると電池に切り替わる（電池で時計を動かす一般的なしくみ。くわしい回路はマニュアルで確認）</li>
+      <li>電池の持ち：220mAh ÷ 0.0007mA ≒ 31万時間（計算上は何十年分）。実際は電池が自然に減る分などで短くなるので、交換の目安はマニュアルで確認する</li>
+      <li>時計が使う電気はとても小さいので、24V の電源や、ほかのセンサーの電気にはほとんど影響しない</li>
+    </ul>
+
     <h3>自動で動くようにする</h3>
     <div class="flow">
       <div class="step"><b>電源を入れる</b>ラズパイの時刻は、前に止まったときのまま（ずれている）</div>
@@ -469,6 +484,7 @@ sudo timedatectl set-ntp true</pre>
     <table>
       <tr><th>場所</th><th>かかっているもの</th><th>大きさ</th><th>メモ</th></tr>
       <tr><td>CPI-RAS の電源端子（CN1）</td><td>直流電圧</td><td class="num">24V</td><td>THD-R-C と同じ ACアダプター（BS-ACDC-2420）から。3番 V＋（黄）・2番 V−（青）</td></tr>
+      <tr><td>CPI-RAS の時計の電池（CR2032）</td><td>直流電圧</td><td class="num">3V</td><td>時計の部品が使うのは 約0.7µA（時刻を刻むだけのとき）</td></tr>
       <tr><td>ラズパイの電源</td><td>直流電圧</td><td class="num">5V</td><td>CPI-RAS が 24V から作り、40ピンを通してラズパイに送る（ラズパイの USB-C は使わない）</td></tr>
       <tr><td>SHT31 の電源</td><td>直流電圧</td><td class="num">3.3V</td><td>ラズパイの1番ピンから（ブレッドボードの ＋ の列を通る）</td></tr>
       <tr><td>SHT31 の通信（I2C）</td><td>信号の電圧</td><td class="num">3.3V</td><td>ラズパイの GPIO は 3.3V（5V をかけると壊れる）</td></tr>
