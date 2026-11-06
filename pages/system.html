@@ -66,6 +66,14 @@
   code, .formula { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .85rem;
                    background: var(--code); border-radius: 6px; padding: 1px 6px; }
   .formula { display: block; padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* コマンド・設定ファイルの中身（長い行は横にスクロール） */
+  pre.code { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .8rem; line-height: 1.5;
+             background: var(--code); border-radius: 8px; padding: 10px 12px; margin: 6px 0 10px; overflow-x: auto; }
+  /* 重ね方の図（下から順に積む） */
+  .stack { display: flex; flex-direction: column-reverse; gap: 4px; max-width: 460px; margin: 8px 0; }
+  .stack div { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); font-size: .88rem; }
+  .stack .pin { border-style: dashed; color: var(--muted); }
+  .ok { color: var(--ok); font-weight: 700; }
   ul { margin: 6px 0; padding-left: 1.3em; }
   li { margin: 2px 0; }
   /* 確認がまだのところ */
@@ -87,6 +95,7 @@
     <a href="#pt100">Pt100</a>
     <a href="#ktc">K型熱電対</a>
     <a href="#thdrc">THD-R-C</a>
+    <a href="#cpiras">電源と時計（CPI-RAS）</a>
     <a href="#power">電圧・電流のまとめ</a>
     <a href="#pi">ラズパイの中の処理</a>
     <a href="#site">サイトに出るまで</a>
@@ -226,9 +235,9 @@
       <li>温度：THD-R-C の A → GP40T の A0。A0 と G0 のあいだに 150Ω</li>
       <li>湿度：THD-R-C の B → GP40T の A1。A1 と G1 のあいだに 150Ω</li>
       <li>G0・G1 は THD-R-C の電源の −（GND）へ</li>
-      <li>THD-R-C の電源：<b>DC 24V</b>。ACアダプター（bitstrong BS-ACDC-2420。入力 AC100〜240V、出力 DC24.0V 2.0A（48W）、PSE マーク付き、プラグ 外径5.5mm・内径2.1mm、極性はセンタープラス＝プラグの中心が＋）→ パワーコネクター（2芯の電源用コネクター。プラグを＋と－の線に分ける）→ THD-R-C の電源の＋・－</li>
+      <li>THD-R-C の電源：<b>DC 24V</b>。ACアダプター（bitstrong BS-ACDC-2420。入力 AC100〜240V、出力 DC24.0V 2.0A（48W）、PSE マーク付き、プラグ 外径5.5mm・内径2.1mm、極性はセンタープラス＝プラグの中心が＋）→ パワーコネクター（2芯の電源用コネクター。プラグを＋と－の線に分ける）→ THD-R-C の電源の＋・－。この 24V はラズパイの電源（CPI-RAS）と共用している（<a href="#cpiras">電源と時計</a>）</li>
       <li>4〜20mA の電流は、24V の電源 → THD-R-C → 150Ω の抵抗 → 電源の －（GND）と、ひと回りして流れる</li>
-      <li>GP40T はラズパイの上に載せる基板。ラズパイとは電気的に分けた（絶縁した）電源で動く（GPIO27 で電源を入れる）</li>
+      <li>GP40T は、ラズパイ → CPI-RAS → GP40T の順に重ねた一番上の基板。ラズパイとは電気的に分けた（絶縁した）電源で動く（GPIO27 で電源を入れる）</li>
     </ul>
     <h3>150Ω の抵抗を入れている理由</h3>
     <span class="formula">電流の通り道：24V（＋）→ THD-R-C → 出力 A → GP40T の A0 → 150Ω → GP40T の G0 → 24V（－）
@@ -254,11 +263,192 @@ GP40T は 150Ω の両端（A0 と G0 のあいだ）の電圧を測る。湿度
   </div>
 
   <!-- ============================================================ -->
+  <h2 id="cpiras">電源と時計（CPI-RAS）</h2>
+  <div class="card">
+    <p style="margin-top:0">CPI-RAS は、ラズパイと RPi-GP40T のあいだに重ねる基板。<b>24V の電源からラズパイを動かす</b>ことと、
+      <b>電源が切れても時刻を覚えている時計（RTC）</b>の2つの役目をしている。
+      これで、THD-R-C と同じ 24V の ACアダプター1つでラズパイも動き、ネットにつながっていなくても正しい時刻で記録できる。</p>
+
+    <h3>重ね方（下から順に）</h3>
+    <div class="stack">
+      <div><b>Raspberry Pi 5</b></div>
+      <div><b>CPI-RAS</b>（DIPスイッチ SW2 は全部 OFF のまま）</div>
+      <div class="pin">40ピンのピンヘッダ（CPI-RAS の上の穴と、RPi-GP40T の裏の穴をつなぐ）</div>
+      <div><b>RPi-GP40T</b>（THD-R-C を読む基板）</div>
+    </div>
+    <p class="muted" style="margin:0">（図は上ほど上の段）</p>
+    <ul>
+      <li>CPI-RAS と RPi-GP40T は、使うピンがぶつからないので、重ねてそのまま両方使える</li>
+    </ul>
+
+    <h3>24V 電源の配線</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>変換コネクター（NSK）</th><th>線の色</th><th>CPI-RAS の電源端子（CN1）</th></tr>
+        <tr><td>左のネジ（⊕）</td><td>黄</td><td>3番：V＋</td></tr>
+        <tr><td>右のネジ（⊖）</td><td>青</td><td>2番：V−</td></tr>
+        <tr><td>―</td><td>―</td><td>1番：FG（空き）</td></tr>
+      </table>
+    </div>
+    <ul>
+      <li>24V は THD-R-C と同じ ACアダプター（BS-ACDC-2420、24V 2.0A）を共用している</li>
+      <li>ラズパイの USB-C には何も挿さない（電源は CPI-RAS から 40ピンを通して送られる）</li>
+    </ul>
+
+    <h3>動作確認</h3>
+<pre class="code"># CPI-RAS が見えるか確認（2c と 32 が出れば OK。32 が時計）
+sudo i2cdetect -y 1
+
+# 「GPIO busy」の原因を調べる（GPIO を使っているプログラムの一覧）
+gpioinfo | grep consumer
+ps aux | grep -v grep | grep python
+
+# 動いている記録サービスと、THD-R-C の最新の記録を確認
+systemctl list-units | grep -i -E &quot;thd|sht|monitor&quot;
+journalctl -u thdrc-logger -n 5 --no-pager</pre>
+    <ul>
+      <li>I2C で CPI-RAS の <code>2c</code> と <code>32</code>（時計）が見えた</li>
+      <li>RPi-GP40T のサンプル（sampleGp40_RPi5.py）が「GPIO busy」になったのは、記録サービス（thdrc-logger）がすでに GP40T を使っていたため。
+        THD-R-C は正常に記録できていた（故障ではない）</li>
+    </ul>
+
+    <h3>CPI-RAS の時計を使えるようにする</h3>
+    <p style="margin:0">ラズパイ5 本体の時計（rtc0）は、電池をつけていないと電源を抜いたときに止まる。そこで CPI-RAS の時計（rtc1）を使う。
+      CPI-RAS の時計は RX8900 という部品で、ラズパイに入っている rtc-rv8803 のドライバーで動く。</p>
+<pre class="code"># 時計のドライバーがラズパイに入っているか確認
+modinfo rtc-rv8803 | head -3
+
+# 時計を登録する（I2C の 32 番の部品を RX8900 として登録）
+sudo modprobe rtc-rv8803
+echo rx8900 0x32 | sudo tee /sys/bus/i2c/devices/i2c-1/new_device
+cat /sys/class/rtc/rtc*/name     # rtc0 = ラズパイ5 本体、rtc1 = CPI-RAS
+
+# ネットで時刻が合っているか確認（synchronized: yes なら OK）
+timedatectl
+
+# hwclock コマンドを入れる
+sudo apt install -y util-linux-extra
+
+# CPI-RAS の時計に今の時刻を書き込み、読み出して確認
+sudo hwclock -w -f /dev/rtc1
+sudo hwclock -r -f /dev/rtc1</pre>
+
+    <h3>自動で動くようにする</h3>
+    <div class="flow">
+      <div class="step"><b>電源を入れる</b>ラズパイの時刻は、前に止まったときのまま（ずれている）</div>
+      <div class="arrow"></div>
+      <div class="step"><b>cpi-rtc-load</b>CPI-RAS の時計を登録し、その時刻をラズパイに読み込む<span class="v">起動時に1回</span></div>
+      <div class="arrow"></div>
+      <div class="step"><b>記録が始まる</b>1行目から正しい時刻で記録される</div>
+      <div class="arrow"></div>
+      <div class="step"><b>cpi-rtc-save</b>ネットで時刻が合っていれば、その時刻を CPI-RAS の時計に書き込む<span class="v">1時間ごと</span></div>
+    </div>
+    <ul>
+      <li>CPI-RAS の時計を、ネットで合わせた時刻で1時間ごとに直すので、時計のずれがたまらない</li>
+      <li>ネットで時刻が合っていないとき（ネットなしで起動したときなど）は書き込まない。ずれた時刻で CPI-RAS の時計を上書きしないため</li>
+      <li>時計の登録は電源を入れるたびに消えるので、起動のたびに cpi-rtc-load で登録し直している</li>
+    </ul>
+    <p style="margin:6px 0 0"><b>① 起動時に CPI-RAS の時計から時刻を読み込むプログラム</b>（<code>/usr/local/sbin/cpi-rtc-load.sh</code>）</p>
+    <p class="muted" style="margin:0">時計のドライバーを読み込み → 時計を登録（まだなら）→ 時計が見えるまで最大10秒待つ → その時刻をラズパイに読み込む</p>
+<pre class="code">#!/bin/bash
+modprobe rtc-rv8803
+[ -e /sys/bus/i2c/devices/1-0032 ] || echo rx8900 0x32 &gt; /sys/bus/i2c/devices/i2c-1/new_device
+for i in $(seq 1 20); do
+  F=$(grep -l rv8803 /sys/class/rtc/rtc*/name 2&gt;/dev/null | head -1)
+  [ -n &quot;$F&quot; ] &amp;&amp; break
+  sleep 0.5
+done
+[ -n &quot;$F&quot; ] &amp;&amp; hwclock -s -f /dev/$(basename $(dirname $F))</pre>
+    <p style="margin:6px 0 0"><b>② ネットで合わせた時刻を CPI-RAS の時計に書き込むプログラム</b>（<code>/usr/local/sbin/cpi-rtc-save.sh</code>）</p>
+    <p class="muted" style="margin:0">ネットで時刻が合っているときだけ → CPI-RAS の時計を探して → 今の時刻を書き込む</p>
+<pre class="code">#!/bin/bash
+[ &quot;$(timedatectl show -p NTPSynchronized --value)&quot; = &quot;yes&quot; ] || exit 0
+F=$(grep -l rv8803 /sys/class/rtc/rtc*/name 2&gt;/dev/null | head -1)
+[ -n &quot;$F&quot; ] &amp;&amp; hwclock -w -f /dev/$(basename $(dirname $F))</pre>
+    <p style="margin:6px 0 0"><b>③ 起動時に①を動かす設定</b>（<code>/etc/systemd/system/cpi-rtc-load.service</code>）</p>
+    <p class="muted" style="margin:0">ネットでの時刻合わせ（time-sync）や、記録のプログラムより前に動かす</p>
+<pre class="code">[Unit]
+Description=Load time from CPI-RAS RTC
+DefaultDependencies=no
+After=systemd-modules-load.service local-fs.target
+Before=time-sync.target sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cpi-rtc-load.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target</pre>
+    <p style="margin:6px 0 0"><b>④ 1時間ごとに②を動かす設定</b>（<code>/etc/systemd/system/cpi-rtc-save.service</code> と <code>cpi-rtc-save.timer</code>）</p>
+<pre class="code">[Unit]
+Description=Save system time to CPI-RAS RTC
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cpi-rtc-save.sh</pre>
+<pre class="code">[Unit]
+Description=Save time to CPI-RAS RTC hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target</pre>
+    <p style="margin:6px 0 0"><b>⑤ 有効にする</b></p>
+<pre class="code">sudo chmod +x /usr/local/sbin/cpi-rtc-load.sh /usr/local/sbin/cpi-rtc-save.sh
+sudo systemctl daemon-reload
+sudo systemctl enable cpi-rtc-load.service cpi-rtc-save.timer
+sudo systemctl start cpi-rtc-save.timer
+systemctl list-timers | grep cpi</pre>
+
+    <h3>ネットの時刻合わせなしで起動する試験</h3>
+<pre class="code"># ネットでの時刻合わせを止めてシャットダウン
+sudo timedatectl set-ntp false
+sudo poweroff
+# → 電源を抜いて約7分待ち、電源を入れて起動
+
+# 起動後の確認
+date
+systemctl status cpi-rtc-load --no-pager
+journalctl -u thdrc-logger -n 3 --no-pager
+
+# 試験のあと、ネットでの時刻合わせを元に戻す
+sudo timedatectl set-ntp true</pre>
+    <div class="table-wrap">
+      <table>
+        <tr><th>時点</th><th>ラズパイの時刻</th><th>結果</th></tr>
+        <tr><td>起動した直後</td><td class="num">11:17</td><td>シャットダウンしたときの時刻のまま（約7分遅れ）</td></tr>
+        <tr><td>cpi-rtc-load のあと</td><td class="num">11:25</td><td class="ok">CPI-RAS の時計から読み込んで、正しい時刻に直った</td></tr>
+        <tr><td>THD-R-C の記録</td><td class="num">―</td><td class="ok">1行目から正しい時刻で記録された</td></tr>
+      </table>
+    </div>
+
+    <h3>確認できたこと</h3>
+    <ul>
+      <li>CPI-RAS は Raspberry Pi 5 で動く</li>
+      <li>24V の電源だけでラズパイを動かせる（USB-C の電源はいらない）</li>
+      <li>CPI-RAS と RPi-GP40T は、ピンがぶつからずに重ねて使える</li>
+      <li>ネットがなくても、CPI-RAS の時計で正しい時刻のまま起動・記録できる</li>
+      <li>停電したときは、記録が途切れた時刻と再開した時刻から、止まっていた時間がわかる</li>
+    </ul>
+
+    <h3>残っていること</h3>
+    <ul>
+      <li><b>時刻合わせを戻したかの確認</b>：<code>sudo timedatectl set-ntp true</code> を実行していなければ実行する（<code>timedatectl</code> で「NTP service: active」なら戻っている）</li>
+      <li><b>SHT31</b>：今はつながっていないが、記録のプログラム（sht31-logger）は動いたまま。止めるか、つなぎ方を考える</li>
+      <li><b>停電中も動かす場合</b>：UPS が必要（BE425M-JP：10,558円、停電を知らせる機能付きの BE550M1-JP：26,378円）</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
   <h2 id="power">電圧・電流のまとめ</h2>
   <div class="card table-wrap">
     <table>
       <tr><th>場所</th><th>かかっているもの</th><th>大きさ</th><th>メモ</th></tr>
-      <tr><td>ラズパイの電源</td><td>直流電圧</td><td class="num">5V（5A まで）</td><td>ラズパイ5用の 27W アダプタ</td></tr>
+      <tr><td>CPI-RAS の電源端子（CN1）</td><td>直流電圧</td><td class="num">24V</td><td>THD-R-C と同じ ACアダプター（BS-ACDC-2420）から。3番 V＋（黄）・2番 V−（青）</td></tr>
+      <tr><td>ラズパイの電源</td><td>直流電圧</td><td class="num">5V</td><td>CPI-RAS が 24V から作り、40ピンを通してラズパイに送る（ラズパイの USB-C は使わない）</td></tr>
       <tr><td>SHT31 の電源</td><td>直流電圧</td><td class="num">3.3V</td><td>ラズパイの1番ピンから（ブレッドボードの ＋ の列を通る）</td></tr>
       <tr><td>SHT31 の通信（I2C）</td><td>信号の電圧</td><td class="num">3.3V</td><td>ラズパイの GPIO は 3.3V（5V をかけると壊れる）</td></tr>
       <tr><td>USB モジュール（Pt100・K型）</td><td>USB の電源</td><td class="num">5V</td><td>ラズパイの USB 差し込み口から</td></tr>
@@ -266,7 +456,7 @@ GP40T は 150Ω の両端（A0 と G0 のあいだ）の電圧を測る。湿度
       <tr><td>K型熱電対の線</td><td>温度差で出る電圧</td><td class="num">約0.041mV／℃</td><td>室温どうしなら 1mV もない</td></tr>
       <tr><td>THD-R-C の出力</td><td>電流</td><td class="num">4〜20mA</td><td>温度・湿度で2本</td></tr>
       <tr><td>THD-R-C 側の 150Ω</td><td>抵抗の両端の電圧</td><td class="num">0.6〜3.0V</td><td>GP40T で測る</td></tr>
-      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V（2.0A まで）</td><td>ACアダプター BS-ACDC-2420 → パワーコネクター（2芯）で ＋・－ に分けてつなぐ</td></tr>
+      <tr><td>THD-R-C の電源</td><td>直流電圧</td><td class="num">24V（2.0A まで）</td><td>ACアダプター BS-ACDC-2420 → パワーコネクター（2芯）で ＋・－ に分けてつなぐ。CPI-RAS（ラズパイの電源）と共用</td></tr>
     </table>
   </div>
 
@@ -283,6 +473,8 @@ GP40T は 150Ω の両端（A0 と G0 のあいだ）の電圧を測る。湿度
       <tr><td>pages-publish</td><td>記録を10分ごとの平均・最高・最低にまとめ、公開サイトへ送る</td><td class="num">10分</td><td>GitHub Pages</td></tr>
       <tr><td>templog-backup</td><td>記録と1日ごとのグラフ画像を Google ドライブへ</td><td class="num">1時間</td><td>Google ドライブ</td></tr>
       <tr><td>netcheck</td><td>ネットが切れたら、つなぎ直す・再起動する</td><td class="num">常に見張る</td><td>―</td></tr>
+      <tr><td>cpi-rtc-load</td><td>起動したときに、CPI-RAS の時計から今の時刻を読み込む</td><td class="num">起動時に1回</td><td>ラズパイの時計</td></tr>
+      <tr><td>cpi-rtc-save</td><td>ネットで合わせた正しい時刻を、CPI-RAS の時計に書き込む</td><td class="num">1時間（起動5分後から）</td><td>CPI-RAS の時計</td></tr>
     </table>
     <ul>
       <li>補正（管理欄で設定する、測った値に足す数）は、記録する前に足す。補正を変えても、それまでの記録は変わらない</li>
