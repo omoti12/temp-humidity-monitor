@@ -63,14 +63,21 @@ class ADC:
         self.spi = spidev.SpiDev()
         self.spi.open(SPI_BUS, SPI_DEV)
         self.spi.mode = 0               # MCP3004 は SPI モード0
-        self.spi.max_speed_hz = 1000000 # 1MHz
+        # 読む速さ。加速度センサー（KXR94）の出力は電気が弱い（出力の抵抗が大きい）ので、
+        # 速く読むと MCP3004 の中のコンデンサーが正しい電圧になる前に読んでしまう。ゆっくり（100kHz）読む
+        self.spi.max_speed_hz = 100000
 
-    def read_count(self, ch):
-        """Ch（0〜3）を読んで 0〜1023 の数字を返す"""
+    def _read_once(self, ch):
         self.cs.off()                   # CS を Low にして MCP3004 を呼び出す
         r = self.spi.xfer2([0x01, (0x08 | ch) << 4, 0x00])  # 開始の合図・どの ch か・結果を受け取る分
         self.cs.on()                    # CS を High に戻す
         return ((r[1] & 0x03) << 8) | r[2]
+
+    def read_count(self, ch):
+        """Ch（0〜3）を読んで 0〜1023 の数字を返す。
+        ch を切りかえた直後は前の ch の電圧が残りやすいので、2回読んで2回目を使う"""
+        self._read_once(ch)
+        return self._read_once(ch)
 
     def read_g(self):
         """Ch0・Ch1・Ch2（X・Y・Z）を読んで、加速度[G]の (x, y, z) を返す"""
