@@ -44,7 +44,7 @@ Raspberry Pi と温湿度センサー SHT31 で、温度・湿度を1分ごと�
 | `pt100_logger.py` | 比較用センサー Pt100・K型熱電対（Y2Kb の USB モジュール）の記録（使うときだけ） |
 | `accel_logger.py` | 加速度センサー（MCP3004 を SPI1 で読む）の記録。1分ごとにCSV、サイトに今の値とグラフ |
 | `accel_base.py` | 加速度センサーの基準（今置いている位置）を決める。サイトに基準からの変化と傾きが出る |
-| `accel_test.py` | 加速度センサー（MCP3004 を SPI1 で読む）の読み試し。THD-R-C と同時に使える。Ctrl+C で止まる |
+| `accel_test.py` | 加速度センサー（MCP3004 を SPI1 で読む）の読み試し。accel-logger を止めてから使う。Ctrl+C で止まる |
 | `buzzer_test.py` | ブザーの鳴らし試し（ピン番号を付けて動かす。Ctrl+C で止まる） |
 | `compare_data.py` | 比較用センサー（THD-R-C・Pt100・K型熱電対）の記録をサイト用に読む部品 |
 | `pages/` | GitHub Pages 用のサイト（`system.html` は測り方と仕組みの説明）と公開スクリプト |

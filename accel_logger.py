@@ -12,7 +12,7 @@
 #        傾き    … 基準（accel_base.py で決めた、置いた位置での向き）から何度傾いたか[度]
 #                  基準を決めていなければ空。基準は1分ごとに読み直すので、決め直しても再起動はいらない
 #
-# つなぎ方: accel_test.py と同じ（SPI1。38番 DIN・35番 DOUT・40番 CLK・12番 CS）
+# つなぎ方: accel_test.py と同じ（SPI1。38番 DIN・35番 DOUT・40番 CLK、CS は 11番を自分で操作する）
 #   準備として /boot/firmware/config.txt に dtoverlay=spi1-1cs が必要
 #
 # 動かし方
@@ -30,11 +30,15 @@ from collections import deque
 from datetime import datetime
 
 import spidev
+from gpiozero import DigitalOutputDevice
 
 import compare_data
 
 NAME = "accel"          # 記録の名前（templog/accel/・accel.json）
-SPI_BUS, SPI_DEV = 1, 0 # SPI1 の CE0（12番ピン）
+SPI_BUS, SPI_DEV = 1, 0 # SPI1（38番・35番・40番ピン）
+# MCP3004 の CS（呼び出しの合図）は 11番ピン（GPIO17）を、このプログラムが自分で Low・High にする
+# （SPI1 の CE0 の 12番ピンでは MCP3004 に合図が届かなかったため）
+CS_PIN = "BOARD11"
 VREF = 3.3              # MCP3004 の基準の電圧[V]
 SAMPLE = 0.1            # 読む間隔[秒]
 INTERVAL = 60           # 記録（CSV）の間隔[秒]
@@ -46,14 +50,40 @@ ZERO_G = VREF / 2
 PER_G = VREF / 5
 
 
-def read_g(spi):
-    """MCP3004 の Ch0・Ch1・Ch2（X・Y・Z）を読んで、加速度[g]の (x, y, z) を返す"""
-    out = []
-    for ch in (0, 1, 2):
-        r = spi.xfer2([0x01, (0x08 | ch) << 4, 0x00])   # 開始の合図・どの ch か・結果を受け取る分
-        n = ((r[1] & 0x03) << 8) | r[2]                 # 0〜1023 の数字
-        out.append((n / 1023 * VREF - ZERO_G) / PER_G)  # 数字 → 電圧 → 加速度
-    return tuple(out)
+class ADC:
+    """MCP3004（AD コンバーター）。SPI1 でやり取りし、CS は 11番ピンを自分で操作する"""
+
+    def __init__(self):
+        path = f"/dev/spidev{SPI_BUS}.{SPI_DEV}"
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"{path} がありません。/boot/firmware/config.txt に dtoverlay=spi1-1cs を書いて再起動してください")
+        # ほかのプログラム（accel-logger など）が 11番ピンを使っていると、ここで GPIOPinInUse になる
+        self.cs = DigitalOutputDevice(CS_PIN, initial_value=True)   # High = 呼び出していない
+        self.spi = spidev.SpiDev()
+        self.spi.open(SPI_BUS, SPI_DEV)
+        self.spi.mode = 0               # MCP3004 は SPI モード0
+        self.spi.max_speed_hz = 1000000 # 1MHz
+
+    def read_count(self, ch):
+        """Ch（0〜3）を読んで 0〜1023 の数字を返す"""
+        self.cs.off()                   # CS を Low にして MCP3004 を呼び出す
+        r = self.spi.xfer2([0x01, (0x08 | ch) << 4, 0x00])  # 開始の合図・どの ch か・結果を受け取る分
+        self.cs.on()                    # CS を High に戻す
+        return ((r[1] & 0x03) << 8) | r[2]
+
+    def read_g(self):
+        """Ch0・Ch1・Ch2（X・Y・Z）を読んで、加速度[G]の (x, y, z) を返す"""
+        return tuple(to_g(self.read_count(ch)) for ch in (0, 1, 2))
+
+    def close(self):
+        self.spi.close()
+        self.cs.close()
+
+
+def to_g(n):
+    """MCP3004 の数字（0〜1023）→ 電圧 → 加速度[G]"""
+    return (n / 1023 * VREF - ZERO_G) / PER_G
 
 
 def average(vals, i):
@@ -97,14 +127,11 @@ def append_csv(now, x, y, z, shake, base):
 
 
 def main():
-    path = f"/dev/spidev{SPI_BUS}.{SPI_DEV}"
-    if not os.path.exists(path):
-        # SPI1 の準備がないときはエラーで止まる（systemd が10秒後に起動し直す）
-        sys.exit(f"{path} がありません。/boot/firmware/config.txt に dtoverlay=spi1-1cs を書いて再起動してください")
-    spi = spidev.SpiDev()
-    spi.open(SPI_BUS, SPI_DEV)
-    spi.mode = 0                # MCP3004 は SPI モード0
-    spi.max_speed_hz = 1000000  # 1MHz
+    try:
+        adc = ADC()
+    except Exception as e:
+        # SPI1 の準備がない・11番ピンが使われているときはエラーで止まる（systemd が10秒後に起動し直す）
+        sys.exit(f"加速度センサーを読めません: {e}")
     print("加速度センサーの記録を始めました", flush=True)
     minute = []     # この1分間の (x, y, z)
     sec = []        # この1秒間の (x, y, z)
@@ -113,7 +140,7 @@ def main():
     base = compare_data.accel_base()    # 基準（1分ごとに読み直す）
     recent_shakes = deque(maxlen=NOW_SHAKE_SEC)     # 直近5秒の、1秒ごとの揺れの最大
     while True:
-        xyz = read_g(spi)
+        xyz = adc.read_g()
         minute.append(xyz)
         sec.append(xyz)
         now_t = time.time()
