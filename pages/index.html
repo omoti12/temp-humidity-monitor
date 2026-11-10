@@ -98,6 +98,7 @@
   /* 加速度の今の値（グラフの右上） */
   .accel-now { font-size: .9rem; font-variant-numeric: tabular-nums; }
   .accel-now b { margin: 0 2px 0 8px; color: var(--muted); font-weight: 400; }
+  .accel-warn { color: var(--warn); font-size: .8rem; margin-top: 2px; }
   /* 温度・露点温度の切り替えボタン（選んでいる方を濃くする） */
   .chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
   .switch { display: flex; gap: 4px; }
@@ -341,7 +342,7 @@ function lineOpts(unit) {
                tooltip: { filter: (i) => !i.dataset.label.startsWith("_") && !i.dataset.threshold && i.parsed.y != null,
                           callbacks: { label: (c) => {
                             const u = c.dataset.unit || unit;   // 線ごとの単位（加速度のグラフの「傾き」は °）
-                            return `${c.dataset.label}: ${c.parsed.y.toFixed(u === "g" ? 2 : 1)}${u}`;
+                            return `${c.dataset.label}: ${c.parsed.y.toFixed(u === "G" ? 2 : 1)}${u}`;
                           } } },
                // 拡大・移動の設定（横方向＝時刻だけ。温度と湿度のグラフは syncRange で一緒に動かす）
                zoom: {
@@ -435,7 +436,7 @@ function buildAccelChart() {
       // 傾き（基準から何度傾いたか。右の目盛り）。基準を決めていないときは出さない
       line("傾き", "--text", { yAxisID: "y2", unit: "°", borderDash: [2, 2], hidden: true }),
     ] },
-    options: lineOpts("g"),
+    options: lineOpts("G"),   // G = 重力加速度（1G は地球の重力の強さ。グラムではない）
   });
   // 傾き用の右の目盛り（度）
   accelChart.options.scales.y2 = { position: "right", grid: { display: false }, suggestedMin: 0, suggestedMax: 5,
@@ -569,8 +570,13 @@ function showAccelNow(a) {
   const sg = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
   $("accelNow").innerHTML = !a ? ""
     : a.base
-      ? `基準から <b>X</b>${sg(a.dx)}g <b>Y</b>${sg(a.dy)}g <b>Z</b>${sg(a.dz)}g <b>傾き</b>${a.tilt.toFixed(1)}° <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}g`
-      : `<b>X</b>${a.x.toFixed(2)}g <b>Y</b>${a.y.toFixed(2)}g <b>Z</b>${a.z.toFixed(2)}g <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}g`;
+      ? `基準から <b>X</b>${sg(a.dx)}G <b>Y</b>${sg(a.dy)}G <b>Z</b>${sg(a.dz)}G <b>傾き</b>${a.tilt.toFixed(1)}° <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}G`
+      : `<b>X</b>${a.x.toFixed(2)}G <b>Y</b>${a.y.toFixed(2)}G <b>Z</b>${a.z.toFixed(2)}G <b>揺れ（5秒の最大）</b>${a.shake.toFixed(2)}G`;
+  // 止まっていれば、加速度の大きさは約 1G（地球の重力）。大きく外れていたら、読み方か配線がおかしい
+  const mag = a && Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  if (a && !(mag > 0.5 && mag < 1.5)) {
+    $("accelNow").innerHTML += `<div class="accel-warn">値がおかしいようです（止めて置いても大きさが 1G 付近になりません。配線を確認してください）</div>`;
+  }
   showAccelCard();
 }
 // 加速度の欄は、今の値かその日の記録があるときだけ出す

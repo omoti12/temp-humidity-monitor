@@ -291,6 +291,7 @@ GP40T は 150Ω の両端（A0 と G0 のあいだ）の電圧を測る。湿度
       <li>準備として <code>/boot/firmware/config.txt</code> に <code>dtoverlay=spi1-1cs</code> を書く（再起動なしで使うときは <code>sudo dtoverlay spi1-1cs</code>）</li>
     </ul>
     <h3>数字の計算</h3>
+    <p class="muted" style="margin:0">G は重力加速度（1G = 地球の重力の強さ、約9.8m/s²）。重さのグラム（g）ではない。</p>
     <span class="formula">電圧[V] = MCP3004 の数字 ÷ 1023 × 3.3V
 加速度[g] = (電圧 − 1.65V) ÷ 0.66V
 揺れ[g]   = |√(X² + Y² + Z²) − 1|   （止まっていれば 0 に近い。1分間・10分間で一番大きかった値を残す）</span>
