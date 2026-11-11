@@ -49,6 +49,10 @@ def main():
             adc = accel_logger.ADC()
         except (GPIOPinInUse, FileNotFoundError) as e:
             sys.exit(f"加速度センサーを読めません: {e}")
+        except Exception:
+            # 11番ピンを別のプログラム（accel-logger・accel_test.py）が使っている（GPIO busy）
+            sys.exit("加速度センサーを読めません（11番ピンを別のプログラムが使っています）。"
+                     "記録のプログラムが動き出して1分ほど待ってから、もう一度実行してください")
         while time.time() < end:
             vals.append(adc.read_g())
             time.sleep(accel_logger.SAMPLE)

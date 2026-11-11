@@ -42,6 +42,9 @@ def main():
         sys.exit("記録のプログラム（accel-logger）が動いています。先に止めてください: sudo systemctl stop accel-logger")
     except FileNotFoundError as e:
         sys.exit(str(e))
+    except Exception:
+        # lgpio では、ほかのプログラムが使っているピンは「GPIO busy」というエラーになる
+        sys.exit("記録のプログラム（accel-logger）が動いています。先に止めてください: sudo systemctl stop accel-logger")
     print("加速度センサーを読んでいます（0.5秒ごと）。止めるときは Ctrl+C", flush=True)
     print("   X[G]    Y[G]    Z[G]   | 数字（0〜1023）X / Y / Z", flush=True)
     try:
